@@ -1,6 +1,7 @@
 // ============================================================
 // NAVIGATION - LIA App
 // Bottom Tab + Stack navigation com Material 3
+// Atualizado com rota de Configurações
 // ============================================================
 
 import React from 'react';
@@ -11,18 +12,21 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing } from '../theme';
 
-// Telas
+// Telas principais (tabs)
 import HomeScreen from '../screens/HomeScreen';
 import MedicamentosScreen from '../screens/MedicamentosScreen';
 import ConsultasScreen from '../screens/ConsultasScreen';
 import ReceitasScreen from '../screens/ReceitasScreen';
 import IdososScreen from '../screens/IdososScreen';
+
+// Telas secundárias (stack)
 import CuidadorScreen from '../screens/CuidadorScreen';
 import IdosoFormScreen from '../screens/IdosoFormScreen';
 import IdosoDetailScreen from '../screens/IdosoDetailScreen';
 import MedicamentoFormScreen from '../screens/MedicamentoFormScreen';
 import ConsultaFormScreen from '../screens/ConsultaFormScreen';
 import ReceitaFormScreen from '../screens/ReceitaFormScreen';
+import ConfiguracoesScreen from '../screens/ConfiguracoesScreen'; // 🆕 NOVO
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -46,7 +50,7 @@ function TabNavigator() {
         tabBarActiveTintColor: Colors.primary,
         tabBarInactiveTintColor: Colors.onSurfaceVariant,
         tabBarLabelStyle: styles.tabLabel,
-        tabBarIcon: ({ focused, color, size }) => {
+        tabBarIcon: ({ focused, color }) => {
           const iconSet = TAB_ICONS[route.name];
           const iconName = focused ? iconSet.focused : iconSet.outline;
           return (
@@ -91,15 +95,24 @@ export default function AppNavigator() {
   return (
     <NavigationContainer>
       <Stack.Navigator
-        screenOptions={{ headerShown: false, animation: 'slide_from_right' }}
+        screenOptions={{
+          headerShown: false,
+          animation: 'slide_from_right',
+        }}
       >
+        {/* Tabs principais */}
         <Stack.Screen name="Tabs" component={TabNavigator} />
+
+        {/* Telas secundárias */}
         <Stack.Screen name="Cuidador" component={CuidadorScreen} />
         <Stack.Screen name="IdosoForm" component={IdosoFormScreen} />
         <Stack.Screen name="IdosoDetail" component={IdosoDetailScreen} />
         <Stack.Screen name="MedicamentoForm" component={MedicamentoFormScreen} />
         <Stack.Screen name="ConsultaForm" component={ConsultaFormScreen} />
         <Stack.Screen name="ReceitaForm" component={ReceitaFormScreen} />
+
+        {/* 🆕 Nova tela de Configurações */}
+        <Stack.Screen name="Configuracoes" component={ConfiguracoesScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
