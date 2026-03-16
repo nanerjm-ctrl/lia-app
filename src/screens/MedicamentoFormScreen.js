@@ -1,75 +1,28 @@
 // ============================================================
 // MEDICAMENTO FORM SCREEN - LIA App
-// Cadastro e edição de medicamento com alarmes de notificação
+// Cadastro/edição de medicamento com alarme persistente
+// Opção de ativar/desativar alarme por medicamento
 // ============================================================
 
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, Alert, TouchableOpacity, Image
+  View, Text, ScrollView, StyleSheet, Alert,
+  TouchableOpacity, Image, Switch
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import * as Notifications from 'expo-notifications';
 import { Ionicons } from '@expo/vector-icons';
 
 import { Colors, Typography, Spacing, BorderRadius } from '../theme';
 import { Card, Button, InputField, ScreenHeader } from '../components';
 import { MedicamentoStorage, IdosoStorage } from '../storage';
 import { mascaraHora } from '../services/helpers';
+import {
+  agendarTodosAlarmes,
+  cancelarAlarmesMedicamento,
+  requestPermissions,
+} from '../services/notifications';
 
-// ── Função para agendar alarmes de medicamento ─────────────
-// Cancela alarmes antigos e cria novos para cada horário cadastrado
-const agendarAlarmes = async (nomeMedicamento, dose, listaHorarios) => {
-  try {
-    // Verificar permissão antes de agendar
-    const { status } = await Notifications.getPermissionsAsync();
-    if (status !== 'granted') {
-      console.log('[Alarmes] Permissão de notificação não concedida');
-      return;
-    }
-
-    // Cancela TODOS os alarmes agendados anteriormente
-    await Notifications.cancelAllScheduledNotificationsAsync();
-    console.log('[Alarmes] Alarmes anteriores cancelados');
-
-    // Cria um alarme para cada horário informado
-    for (const horario of listaHorarios) {
-      if (!horario || !horario.includes(':')) continue;
-
-      const [hour, minute] = horario.split(':').map(Number);
-
-      // Validar hora e minuto
-      if (isNaN(hour) || isNaN(minute)) continue;
-      if (hour < 0 || hour > 23 || minute < 0 || minute > 59) continue;
-
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: '💊 Hora do Medicamento!',
-          body: `${nomeMedicamento} — ${dose}`,
-          sound: true,
-          android: {
-            channelId: 'medicamentos',
-            color: '#5B8C6E',
-            priority: 'high',
-          },
-        },
-        trigger: {
-          hour,
-          minute,
-          repeats: true, // Repetir todos os dias no mesmo horário
-        },
-      });
-
-      console.log(`[Alarmes] Alarme agendado para ${horario} - ${nomeMedicamento}`);
-    }
-
-    console.log(`[Alarmes] ${listaHorarios.length} alarme(s) agendado(s) com sucesso`);
-  } catch (error) {
-    console.error('[Alarmes] Erro ao agendar alarmes:', error);
-  }
-};
-
-// ── Componente principal ───────────────────────────────────
 export default function MedicamentoFormScreen({ navigation, route }) {
   const { medicamentoId, idosoId: idosoIdParam } = route?.params || {};
   const isEdit = !!medicamentoId;
@@ -83,8 +36,15 @@ export default function MedicamentoFormScreen({ navigation, route }) {
   const [idosos, setIdosos] = useState([]);
   const [salvando, setSalvando] = useState(false);
   const [errors, setErrors] = useState({});
+  const [notifIdsAntigos, setNotifIdsAntigos] = useState([]);
+
+  // ── Opção de alarme persistente ──────────────────────────
+  // true = alarme toca e vibra até a pessoa dispensar
+  // false = sem alarme (silencioso)
+  const [alarmeAtivo, setAlarmeAtivo] = useState(true);
 
   useEffect(() => {
+    requestPermissions();
     carregarIdosos();
     if (isEdit) carregarMedicamento();
   }, []);
@@ -92,7 +52,6 @@ export default function MedicamentoFormScreen({ navigation, route }) {
   const carregarIdosos = async () => {
     const lista = await IdosoStorage.getAll();
     setIdosos(lista);
-    // Se só há um idoso, selecionar automaticamente
     if (lista.length === 1 && !idosoId) {
       setIdosoId(lista[0].id);
     }
@@ -108,6 +67,8 @@ export default function MedicamentoFormScreen({ navigation, route }) {
     setIdosoId(med.idosoId || '');
     setFoto(med.foto || null);
     setObservacoes(med.observacoes || '');
+    setAlarmeAtivo(med.alarmeAtivo !== false); // padrão true
+    setNotifIdsAntigos(med.notifIds || []);
   };
 
   const adicionarHorario = () => {
@@ -115,9 +76,9 @@ export default function MedicamentoFormScreen({ navigation, route }) {
   };
 
   const atualizarHorario = (idx, val) => {
-    const novoHorarios = [...horarios];
-    novoHorarios[idx] = mascaraHora(val);
-    setHorarios(novoHorarios);
+    const novo = [...horarios];
+    novo[idx] = mascaraHora(val);
+    setHorarios(novo);
   };
 
   const removerHorario = (idx) => {
@@ -163,6 +124,12 @@ export default function MedicamentoFormScreen({ navigation, route }) {
     setSalvando(true);
     try {
       const horariosValidos = horarios.filter((h) => h.trim());
+      const idoso = idosos.find((i) => i.id === idosoId);
+
+      // Cancelar alarmes antigos se estiver editando
+      if (notifIdsAntigos.length > 0) {
+        await cancelarAlarmesMedicamento(notifIdsAntigos);
+      }
 
       const dados = {
         nome: nome.trim(),
@@ -171,29 +138,43 @@ export default function MedicamentoFormScreen({ navigation, route }) {
         idosoId,
         foto,
         observacoes,
+        alarmeAtivo, // Salvar preferência de alarme
+        notifIds: [], // Será preenchido abaixo
       };
 
-      // Salvar no banco local
+      // Agendar alarmes persistentes se ativado
+      let novosNotifIds = [];
+      if (horariosValidos.length > 0) {
+        novosNotifIds = await agendarTodosAlarmes(
+          { ...dados, id: medicamentoId || 'novo' },
+          idoso?.nome || 'Idoso',
+          alarmeAtivo
+        );
+        dados.notifIds = novosNotifIds;
+      }
+
+      // Salvar no banco
       if (isEdit) {
         await MedicamentoStorage.update(medicamentoId, dados);
       } else {
         await MedicamentoStorage.add(dados);
       }
 
-      // Agendar alarmes para os horários cadastrados
-      if (horariosValidos.length > 0) {
-        await agendarAlarmes(dados.nome, dados.dose, horariosValidos);
+      // Mensagem de confirmação
+      let mensagem = '';
+      if (!alarmeAtivo) {
+        mensagem = 'Medicamento salvo sem alarme.';
+      } else if (horariosValidos.length > 0) {
+        mensagem = `Alarme persistente configurado para: ${horariosValidos.join(', ')}\n\nO alarme tocará e vibrará até ser dispensado.`;
+      } else {
+        mensagem = 'Medicamento salvo. Adicione horários para ativar o alarme.';
       }
 
-      Alert.alert(
-        '✅ Salvo!',
-        horariosValidos.length > 0
-          ? `Medicamento salvo! Alarme configurado para: ${horariosValidos.join(', ')}`
-          : 'Medicamento salvo com sucesso.',
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
-      );
+      Alert.alert('✅ Salvo!', mensagem, [
+        { text: 'OK', onPress: () => navigation.goBack() },
+      ]);
     } catch (error) {
-      console.error('[MedicamentoForm] Erro ao salvar:', error);
+      console.error('[MedicamentoForm] Erro:', error);
       Alert.alert('Erro', 'Não foi possível salvar o medicamento.');
     } finally {
       setSalvando(false);
@@ -208,10 +189,10 @@ export default function MedicamentoFormScreen({ navigation, route }) {
       />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+
         {/* Dados do medicamento */}
         <Card>
           <Text style={styles.cardTitle}>💊 Dados do Medicamento</Text>
-
           <InputField
             label="Nome do Medicamento"
             value={nome}
@@ -221,7 +202,6 @@ export default function MedicamentoFormScreen({ navigation, route }) {
             required
             error={errors.nome}
           />
-
           <InputField
             label="Dose / Posologia"
             value={dose}
@@ -233,11 +213,11 @@ export default function MedicamentoFormScreen({ navigation, route }) {
           />
         </Card>
 
-        {/* Horários com alarmes */}
+        {/* Horários */}
         <Card>
           <Text style={styles.cardTitle}>⏰ Horários de Administração</Text>
           <Text style={styles.cardHint}>
-            Cada horário cadastrado gerará um alarme diário automático
+            Adicione um horário para cada dose diária
           </Text>
 
           {horarios.map((h, idx) => (
@@ -268,14 +248,79 @@ export default function MedicamentoFormScreen({ navigation, route }) {
               <Text style={styles.addHorarioText}>Adicionar horário</Text>
             </TouchableOpacity>
           )}
+        </Card>
 
-          {/* Aviso sobre alarmes */}
-          <View style={styles.alarmeInfo}>
-            <Ionicons name="notifications-outline" size={16} color={Colors.primary} />
-            <Text style={styles.alarmeInfoText}>
-              Os alarmes são ativados automaticamente ao salvar e repetem todos os dias.
-            </Text>
+        {/* ── OPÇÃO DE ALARME PERSISTENTE ── */}
+        <Card style={alarmeAtivo ? styles.alarmeCardAtivo : styles.alarmeCardInativo}>
+          <View style={styles.alarmeHeader}>
+            <View style={styles.alarmeIconBox}>
+              <Ionicons
+                name={alarmeAtivo ? 'alarm' : 'alarm-outline'}
+                size={28}
+                color={alarmeAtivo ? Colors.secondary : Colors.outline}
+              />
+            </View>
+            <View style={{ flex: 1, marginLeft: Spacing.md }}>
+              <Text style={styles.alarmeTitulo}>
+                Alarme Persistente
+              </Text>
+              <Text style={styles.alarmeSubtitulo}>
+                {alarmeAtivo
+                  ? '🔔 Alarme toca e vibra até ser dispensado'
+                  : '🔕 Sem alarme sonoro'}
+              </Text>
+            </View>
+            {/* Switch de ativar/desativar */}
+            <Switch
+              value={alarmeAtivo}
+              onValueChange={setAlarmeAtivo}
+              trackColor={{
+                false: Colors.outlineVariant,
+                true: Colors.secondaryContainer,
+              }}
+              thumbColor={alarmeAtivo ? Colors.secondary : Colors.outline}
+            />
           </View>
+
+          {/* Detalhes quando ativado */}
+          {alarmeAtivo && (
+            <View style={styles.alarmeDetalhes}>
+              <View style={styles.alarmeDetalheItem}>
+                <Ionicons name="checkmark-circle" size={16} color={Colors.secondary} />
+                <Text style={styles.alarmeDetalheText}>
+                  Toca mesmo no modo silencioso
+                </Text>
+              </View>
+              <View style={styles.alarmeDetalheItem}>
+                <Ionicons name="checkmark-circle" size={16} color={Colors.secondary} />
+                <Text style={styles.alarmeDetalheText}>
+                  Vibra continuamente até dispensar
+                </Text>
+              </View>
+              <View style={styles.alarmeDetalheItem}>
+                <Ionicons name="checkmark-circle" size={16} color={Colors.secondary} />
+                <Text style={styles.alarmeDetalheText}>
+                  Reforço após 5 minutos se não dispensado
+                </Text>
+              </View>
+              <View style={styles.alarmeDetalheItem}>
+                <Ionicons name="checkmark-circle" size={16} color={Colors.secondary} />
+                <Text style={styles.alarmeDetalheText}>
+                  Repete todos os dias nos horários cadastrados
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* Aviso quando desativado */}
+          {!alarmeAtivo && (
+            <View style={styles.alarmeDesativadoAviso}>
+              <Ionicons name="information-circle-outline" size={16} color={Colors.outline} />
+              <Text style={styles.alarmeDesativadoTexto}>
+                O medicamento será salvo mas não haverá alarme sonoro. Você ainda verá o lembrete na tela inicial.
+              </Text>
+            </View>
+          )}
         </Card>
 
         {/* Idoso */}
@@ -395,17 +440,58 @@ const styles = StyleSheet.create({
     color: Colors.primary, marginLeft: 6,
   },
 
-  alarmeInfo: {
-    flexDirection: 'row', alignItems: 'flex-start',
-    backgroundColor: Colors.primaryContainer,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    marginTop: Spacing.sm,
+  // Cards de alarme
+  alarmeCardAtivo: {
+    borderWidth: 2,
+    borderColor: Colors.secondary,
+    backgroundColor: Colors.secondaryContainer + '33',
   },
-  alarmeInfoText: {
+  alarmeCardInativo: {
+    borderWidth: 1,
+    borderColor: Colors.outlineVariant,
+    backgroundColor: Colors.surfaceVariant,
+  },
+  alarmeHeader: {
+    flexDirection: 'row', alignItems: 'center',
+  },
+  alarmeIconBox: {
+    width: 48, height: 48, borderRadius: 24,
+    backgroundColor: Colors.surface,
+    alignItems: 'center', justifyContent: 'center',
+    ...({ elevation: 1 }),
+  },
+  alarmeTitulo: {
+    ...Typography.titleSmall,
+    color: Colors.onSurface, fontWeight: '700',
+  },
+  alarmeSubtitulo: {
     ...Typography.bodySmall,
-    color: Colors.onPrimaryContainer,
-    marginLeft: Spacing.sm, flex: 1,
+    color: Colors.onSurfaceVariant, marginTop: 2,
+  },
+  alarmeDetalhes: {
+    marginTop: Spacing.md,
+    padding: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+  },
+  alarmeDetalheItem: {
+    flexDirection: 'row', alignItems: 'center',
+    marginBottom: 8,
+  },
+  alarmeDetalheText: {
+    ...Typography.bodySmall,
+    color: Colors.onSurface, marginLeft: 8,
+  },
+  alarmeDesativadoAviso: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    marginTop: Spacing.md,
+    padding: Spacing.sm,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+  },
+  alarmeDesativadoTexto: {
+    ...Typography.bodySmall,
+    color: Colors.outline, marginLeft: 8, flex: 1,
   },
 
   idosoOption: {
@@ -439,22 +525,18 @@ const styles = StyleSheet.create({
     overflow: 'hidden', position: 'relative',
   },
   receitaFoto: {
-    width: '100%', height: 200,
-    borderRadius: BorderRadius.md,
+    width: '100%', height: 200, borderRadius: BorderRadius.md,
   },
   removeFotoBtn: {
     position: 'absolute', top: 8, right: 8,
     backgroundColor: Colors.error,
-    borderRadius: BorderRadius.full,
-    padding: 8,
+    borderRadius: BorderRadius.full, padding: 8,
   },
-
   uploadBtn: {
     borderWidth: 2, borderStyle: 'dashed',
     borderColor: Colors.primary,
     borderRadius: BorderRadius.md,
-    padding: Spacing.xl,
-    alignItems: 'center',
+    padding: Spacing.xl, alignItems: 'center',
   },
   uploadBtnText: {
     ...Typography.bodyMedium,
