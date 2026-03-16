@@ -1,6 +1,6 @@
 // ============================================================
 // MEDICAMENTO FORM SCREEN - LIA App
-// Cadastro e edição de medicamento
+// Cadastro e edição de medicamento com alarmes de notificação
 // ============================================================
 
 import React, { useState, useEffect } from 'react';
@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import * as Notifications from 'expo-notifications';
 import { Ionicons } from '@expo/vector-icons';
 
 import { Colors, Typography, Spacing, BorderRadius } from '../theme';
@@ -16,6 +17,59 @@ import { Card, Button, InputField, ScreenHeader } from '../components';
 import { MedicamentoStorage, IdosoStorage } from '../storage';
 import { mascaraHora } from '../services/helpers';
 
+// ── Função para agendar alarmes de medicamento ─────────────
+// Cancela alarmes antigos e cria novos para cada horário cadastrado
+const agendarAlarmes = async (nomeMedicamento, dose, listaHorarios) => {
+  try {
+    // Verificar permissão antes de agendar
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== 'granted') {
+      console.log('[Alarmes] Permissão de notificação não concedida');
+      return;
+    }
+
+    // Cancela TODOS os alarmes agendados anteriormente
+    await Notifications.cancelAllScheduledNotificationsAsync();
+    console.log('[Alarmes] Alarmes anteriores cancelados');
+
+    // Cria um alarme para cada horário informado
+    for (const horario of listaHorarios) {
+      if (!horario || !horario.includes(':')) continue;
+
+      const [hour, minute] = horario.split(':').map(Number);
+
+      // Validar hora e minuto
+      if (isNaN(hour) || isNaN(minute)) continue;
+      if (hour < 0 || hour > 23 || minute < 0 || minute > 59) continue;
+
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '💊 Hora do Medicamento!',
+          body: `${nomeMedicamento} — ${dose}`,
+          sound: true,
+          android: {
+            channelId: 'medicamentos',
+            color: '#5B8C6E',
+            priority: 'high',
+          },
+        },
+        trigger: {
+          hour,
+          minute,
+          repeats: true, // Repetir todos os dias no mesmo horário
+        },
+      });
+
+      console.log(`[Alarmes] Alarme agendado para ${horario} - ${nomeMedicamento}`);
+    }
+
+    console.log(`[Alarmes] ${listaHorarios.length} alarme(s) agendado(s) com sucesso`);
+  } catch (error) {
+    console.error('[Alarmes] Erro ao agendar alarmes:', error);
+  }
+};
+
+// ── Componente principal ───────────────────────────────────
 export default function MedicamentoFormScreen({ navigation, route }) {
   const { medicamentoId, idosoId: idosoIdParam } = route?.params || {};
   const isEdit = !!medicamentoId;
@@ -108,26 +162,39 @@ export default function MedicamentoFormScreen({ navigation, route }) {
     if (!validar()) return;
     setSalvando(true);
     try {
+      const horariosValidos = horarios.filter((h) => h.trim());
+
       const dados = {
         nome: nome.trim(),
         dose: dose.trim(),
-        horarios: horarios.filter((h) => h.trim()),
+        horarios: horariosValidos,
         idosoId,
         foto,
         observacoes,
       };
 
+      // Salvar no banco local
       if (isEdit) {
         await MedicamentoStorage.update(medicamentoId, dados);
       } else {
         await MedicamentoStorage.add(dados);
       }
 
-      Alert.alert('✅ Salvo!', 'Medicamento salvo com sucesso.', [
-        { text: 'OK', onPress: () => navigation.goBack() },
-      ]);
-    } catch {
-      Alert.alert('Erro', 'Não foi possível salvar.');
+      // Agendar alarmes para os horários cadastrados
+      if (horariosValidos.length > 0) {
+        await agendarAlarmes(dados.nome, dados.dose, horariosValidos);
+      }
+
+      Alert.alert(
+        '✅ Salvo!',
+        horariosValidos.length > 0
+          ? `Medicamento salvo! Alarme configurado para: ${horariosValidos.join(', ')}`
+          : 'Medicamento salvo com sucesso.',
+        [{ text: 'OK', onPress: () => navigation.goBack() }]
+      );
+    } catch (error) {
+      console.error('[MedicamentoForm] Erro ao salvar:', error);
+      Alert.alert('Erro', 'Não foi possível salvar o medicamento.');
     } finally {
       setSalvando(false);
     }
@@ -141,6 +208,7 @@ export default function MedicamentoFormScreen({ navigation, route }) {
       />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        {/* Dados do medicamento */}
         <Card>
           <Text style={styles.cardTitle}>💊 Dados do Medicamento</Text>
 
@@ -165,10 +233,12 @@ export default function MedicamentoFormScreen({ navigation, route }) {
           />
         </Card>
 
-        {/* Horários */}
+        {/* Horários com alarmes */}
         <Card>
           <Text style={styles.cardTitle}>⏰ Horários de Administração</Text>
-          <Text style={styles.cardHint}>Adicione um horário para cada dose diária</Text>
+          <Text style={styles.cardHint}>
+            Cada horário cadastrado gerará um alarme diário automático
+          </Text>
 
           {horarios.map((h, idx) => (
             <View key={idx} style={styles.horarioRow}>
@@ -198,6 +268,14 @@ export default function MedicamentoFormScreen({ navigation, route }) {
               <Text style={styles.addHorarioText}>Adicionar horário</Text>
             </TouchableOpacity>
           )}
+
+          {/* Aviso sobre alarmes */}
+          <View style={styles.alarmeInfo}>
+            <Ionicons name="notifications-outline" size={16} color={Colors.primary} />
+            <Text style={styles.alarmeInfoText}>
+              Os alarmes são ativados automaticamente ao salvar e repetem todos os dias.
+            </Text>
+          </View>
         </Card>
 
         {/* Idoso */}
@@ -221,7 +299,12 @@ export default function MedicamentoFormScreen({ navigation, route }) {
                     <Text style={styles.idosoInitial}>{i.nome.charAt(0)}</Text>
                   </View>
                 )}
-                <Text style={[styles.idosoNome, idosoId === i.id && { color: Colors.primary, fontWeight: '700' }]}>
+                <Text
+                  style={[
+                    styles.idosoNome,
+                    idosoId === i.id && { color: Colors.primary, fontWeight: '700' },
+                  ]}
+                >
                   {i.nome}
                 </Text>
                 {idosoId === i.id && (
@@ -240,11 +323,8 @@ export default function MedicamentoFormScreen({ navigation, route }) {
           {foto ? (
             <View style={styles.receitaFotoContainer}>
               <Image source={{ uri: foto }} style={styles.receitaFoto} resizeMode="cover" />
-              <TouchableOpacity
-                onPress={() => setFoto(null)}
-                style={styles.removeFotoBtn}
-              >
-                <Ionicons name="trash" size={16} color={Colors.onError} />
+              <TouchableOpacity onPress={() => setFoto(null)} style={styles.removeFotoBtn}>
+                <Ionicons name="trash" size={16} color="#fff" />
               </TouchableOpacity>
             </View>
           ) : (
@@ -270,7 +350,7 @@ export default function MedicamentoFormScreen({ navigation, route }) {
         </Card>
 
         <Button
-          label={isEdit ? 'Atualizar' : 'Salvar Medicamento'}
+          label={isEdit ? 'Atualizar Medicamento' : 'Salvar Medicamento'}
           onPress={salvar}
           loading={salvando}
           icon="checkmark-circle-outline"
@@ -287,17 +367,46 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   scroll: { padding: Spacing.md },
 
-  cardTitle: { ...Typography.titleMedium, color: Colors.onSurface, fontWeight: '700', marginBottom: Spacing.sm },
-  cardHint: { ...Typography.bodySmall, color: Colors.outline, marginBottom: Spacing.md },
-  errorText: { ...Typography.labelSmall, color: Colors.error, marginBottom: Spacing.sm },
+  cardTitle: {
+    ...Typography.titleMedium,
+    color: Colors.onSurface, fontWeight: '700',
+    marginBottom: Spacing.sm,
+  },
+  cardHint: {
+    ...Typography.bodySmall,
+    color: Colors.outline, marginBottom: Spacing.md,
+  },
+  errorText: {
+    ...Typography.labelSmall,
+    color: Colors.error, marginBottom: Spacing.sm,
+  },
 
-  horarioRow: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.sm },
+  horarioRow: {
+    flexDirection: 'row', alignItems: 'center',
+    marginBottom: Spacing.sm,
+  },
   removeHorario: { marginLeft: Spacing.sm, marginTop: 4 },
   addHorarioBtn: {
     flexDirection: 'row', alignItems: 'center',
     paddingVertical: Spacing.sm,
   },
-  addHorarioText: { ...Typography.labelMedium, color: Colors.primary, marginLeft: 6 },
+  addHorarioText: {
+    ...Typography.labelMedium,
+    color: Colors.primary, marginLeft: 6,
+  },
+
+  alarmeInfo: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    backgroundColor: Colors.primaryContainer,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginTop: Spacing.sm,
+  },
+  alarmeInfoText: {
+    ...Typography.bodySmall,
+    color: Colors.onPrimaryContainer,
+    marginLeft: Spacing.sm, flex: 1,
+  },
 
   idosoOption: {
     flexDirection: 'row', alignItems: 'center',
@@ -316,11 +425,23 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryContainer,
     alignItems: 'center', justifyContent: 'center',
   },
-  idosoInitial: { ...Typography.titleSmall, color: Colors.primary, fontWeight: '700' },
-  idosoNome: { ...Typography.bodyLarge, color: Colors.onSurface, flex: 1, marginLeft: Spacing.md },
+  idosoInitial: {
+    ...Typography.titleSmall,
+    color: Colors.primary, fontWeight: '700',
+  },
+  idosoNome: {
+    ...Typography.bodyLarge,
+    color: Colors.onSurface, flex: 1, marginLeft: Spacing.md,
+  },
 
-  receitaFotoContainer: { borderRadius: BorderRadius.md, overflow: 'hidden', position: 'relative' },
-  receitaFoto: { width: '100%', height: 200, borderRadius: BorderRadius.md },
+  receitaFotoContainer: {
+    borderRadius: BorderRadius.md,
+    overflow: 'hidden', position: 'relative',
+  },
+  receitaFoto: {
+    width: '100%', height: 200,
+    borderRadius: BorderRadius.md,
+  },
   removeFotoBtn: {
     position: 'absolute', top: 8, right: 8,
     backgroundColor: Colors.error,
@@ -336,7 +457,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   uploadBtnText: {
-    ...Typography.bodyMedium, color: Colors.primary,
+    ...Typography.bodyMedium,
+    color: Colors.primary,
     marginTop: Spacing.sm, textAlign: 'center',
   },
 });
