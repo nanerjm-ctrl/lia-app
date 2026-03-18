@@ -1,6 +1,6 @@
 // ============================================================
 // NAVIGATION - LIA App
-// Atualizado com WelcomeScreen e todas as rotas
+// Atualizado com suporte a navigationRef para notificações
 // ============================================================
 
 import React, { useEffect, useState } from 'react';
@@ -28,7 +28,7 @@ import MedicamentoFormScreen from '../screens/MedicamentoFormScreen';
 import ConsultaFormScreen from '../screens/ConsultaFormScreen';
 import ReceitaFormScreen from '../screens/ReceitaFormScreen';
 import ConfiguracoesScreen from '../screens/ConfiguracoesScreen';
-import WelcomeScreen from '../screens/WelcomeScreen'; // 🆕
+import WelcomeScreen from '../screens/WelcomeScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -70,7 +70,8 @@ function TabNavigator() {
   );
 }
 
-export default function AppNavigator() {
+// ── Aceita navigationRef do App.js ─────────────────────────
+export default function AppNavigator({ navigationRef }) {
   const [primeiroAcesso, setPrimeiroAcesso] = useState(null);
 
   useEffect(() => {
@@ -89,11 +90,10 @@ export default function AppNavigator() {
     }
   };
 
-  // Aguardar verificação
   if (primeiroAcesso === null) return null;
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator
         initialRouteName={primeiroAcesso ? 'Welcome' : 'Tabs'}
         screenOptions={{
@@ -101,17 +101,8 @@ export default function AppNavigator() {
           animation: 'slide_from_right',
         }}
       >
-        {/* 🆕 Tela de boas-vindas — só no primeiro acesso */}
-        <Stack.Screen
-          name="Welcome"
-          component={WelcomeScreen}
-          options={{ animation: 'fade' }}
-        />
-
-        {/* Tabs principais */}
+        <Stack.Screen name="Welcome" component={WelcomeScreen} options={{ animation: 'fade' }} />
         <Stack.Screen name="Tabs" component={TabNavigator} />
-
-        {/* Telas secundárias */}
         <Stack.Screen name="Cuidador" component={CuidadorScreen} />
         <Stack.Screen name="IdosoForm" component={IdosoFormScreen} />
         <Stack.Screen name="IdosoDetail" component={IdosoDetailScreen} />

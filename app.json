@@ -31,7 +31,6 @@
         "android.permission.VIBRATE",
         "android.permission.SCHEDULE_EXACT_ALARM",
         "android.permission.POST_NOTIFICATIONS",
-        "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"
       ]
     },
@@ -62,7 +61,7 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "72699d6b-f826-4441-83b3-cc01bf8fe8b3"
+        "projectId": "72824d6b-35cd-49a7-b4b7-8d20fa5f91e1"
       }
     }
   }

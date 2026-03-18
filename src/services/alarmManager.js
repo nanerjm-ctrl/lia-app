@@ -1,8 +1,7 @@
 // ============================================================
 // ALARM MANAGER SERVICE - LIA App
-// Sistema completo de alarmes para medicamentos
-// Suporta uso contínuo e tempo determinado
-// Funciona mesmo com app fechado via Background Task
+// Corrigido: notificações somem ao tocar
+// Navegação correta ao tocar na notificação
 // ============================================================
 
 import * as Notifications from 'expo-notifications';
@@ -11,11 +10,10 @@ import * as BackgroundFetch from 'expo-background-fetch';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
-// Nome da task de background
 const TASK_VERIFICAR_ALARMES = 'TASK_VERIFICAR_ALARMES_LIA';
 const CHAVE_ALARMES = '@lia_alarmes_agendados';
 
-// ── Configuração do handler de notificações ─────────────────
+// ── Handler global ──────────────────────────────────────────
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -25,16 +23,12 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// ── Definição da Background Task ────────────────────────────
-// Esta task verifica e reagenda alarmes periodicamente
-// mesmo com o app fechado
+// ── Background Task ─────────────────────────────────────────
 TaskManager.defineTask(TASK_VERIFICAR_ALARMES, async () => {
   try {
-    console.log('[AlarmManager] Background task executando...');
     await verificarEReagendarAlarmes();
     return BackgroundFetch.BackgroundFetchResult.NewData;
-  } catch (error) {
-    console.error('[AlarmManager] Erro na background task:', error);
+  } catch {
     return BackgroundFetch.BackgroundFetchResult.Failed;
   }
 });
@@ -45,11 +39,10 @@ export const registrarBackgroundTask = async () => {
     const isRegistered = await TaskManager.isTaskRegisteredAsync(TASK_VERIFICAR_ALARMES);
     if (!isRegistered) {
       await BackgroundFetch.registerTaskAsync(TASK_VERIFICAR_ALARMES, {
-        minimumInterval: 60 * 15, // Verificar a cada 15 minutos
-        stopOnTerminate: false,   // Continua mesmo fechando o app
-        startOnBoot: true,        // Inicia quando ligar o celular
+        minimumInterval: 60 * 15,
+        stopOnTerminate: false,
+        startOnBoot: true,
       });
-      console.log('[AlarmManager] Background task registrada');
     }
   } catch (error) {
     console.error('[AlarmManager] Erro ao registrar task:', error);
@@ -76,9 +69,8 @@ export const requestPermissions = async () => {
 
     if (finalStatus !== 'granted') return false;
 
-    // Configurar canais Android
     if (Platform.OS === 'android') {
-      // Canal principal de alarme — máxima prioridade
+      // Canal principal — alta prioridade, vibra, MAS some ao tocar
       await Notifications.setNotificationChannelAsync('alarme_medicamento', {
         name: '💊 Alarme de Medicamento',
         description: 'Alarme para horário de medicamentos',
@@ -93,7 +85,6 @@ export const requestPermissions = async () => {
         showBadge: true,
       });
 
-      // Canal de consultas
       await Notifications.setNotificationChannelAsync('consultas', {
         name: '📅 Consultas Médicas',
         importance: Notifications.AndroidImportance.HIGH,
@@ -104,7 +95,6 @@ export const requestPermissions = async () => {
         bypassDnd: false,
       });
 
-      // Canal de hidratação
       await Notifications.setNotificationChannelAsync('hidratacao', {
         name: '💧 Hidratação',
         importance: Notifications.AndroidImportance.DEFAULT,
@@ -115,9 +105,7 @@ export const requestPermissions = async () => {
       });
     }
 
-    // Registrar background task
     await registrarBackgroundTask();
-
     return true;
   } catch (error) {
     console.error('[AlarmManager] Erro nas permissões:', error);
@@ -126,19 +114,10 @@ export const requestPermissions = async () => {
 };
 
 // ── Agendar alarmes de um medicamento ──────────────────────
-/**
- * Agenda todos os alarmes para um medicamento.
- *
- * @param {object} medicamento - Dados do medicamento
- * @param {string} nomeIdoso - Nome do idoso
- * @param {boolean} alarmeAtivo - Se alarme está ativo
- * @returns {string[]} IDs das notificações agendadas
- */
 export const agendarAlarmesMedicamento = async (medicamento, nomeIdoso, alarmeAtivo = true) => {
   if (!alarmeAtivo || !medicamento.horarios?.length) return [];
 
   try {
-    // Cancelar alarmes anteriores deste medicamento
     if (medicamento.notifIds?.length) {
       await cancelarAlarmesMedicamento(medicamento.notifIds);
     }
@@ -152,9 +131,6 @@ export const agendarAlarmesMedicamento = async (medicamento, nomeIdoso, alarmeAt
       const [hour, minute] = horario.split(':').map(Number);
       if (isNaN(hour) || isNaN(minute)) continue;
 
-      // Determinar quantos dias agendar
-      // Uso contínuo: agenda 90 dias à frente (e background task reagenda)
-      // Tempo determinado: agenda exatamente os dias especificados
       const diasParaAgendar = medicamento.usoContinuo
         ? 90
         : Math.min(medicamento.diasTratamento || 1, 365);
@@ -164,26 +140,23 @@ export const agendarAlarmesMedicamento = async (medicamento, nomeIdoso, alarmeAt
         dataAlarme.setDate(dataAlarme.getDate() + dia);
         dataAlarme.setHours(hour, minute, 0, 0);
 
-        // Não agendar horários que já passaram hoje
         if (dia === 0 && dataAlarme <= new Date()) continue;
 
-        // Título e corpo da notificação
         const titulo = `💊 ${medicamento.nome}`;
-        const corpo = [
-          `${medicamento.dose}`,
-          `👤 ${nomeIdoso}`,
+        const corpo = `${medicamento.dose}\n👤 ${nomeIdoso}\n${
           medicamento.usoContinuo
             ? '🔄 Uso contínuo'
-            : `📅 Dia ${dia + 1} de ${medicamento.diasTratamento}`,
-        ].join('\n');
+            : `📅 Dia ${dia + 1} de ${medicamento.diasTratamento}`
+        }`;
 
         const id = await Notifications.scheduleNotificationAsync({
           content: {
             title: titulo,
             body: corpo,
             sound: 'default',
-            sticky: true,
-            autoDismiss: false,
+            // ✅ CORRIGIDO: ongoing: false para sumir ao tocar
+            sticky: false,
+            autoDismiss: true,
             data: {
               tipo: 'alarme_medicamento',
               medicamentoId: medicamento.id,
@@ -191,13 +164,15 @@ export const agendarAlarmesMedicamento = async (medicamento, nomeIdoso, alarmeAt
               dia: dia + 1,
               total: diasParaAgendar,
               nomeIdoso,
+              nomeMed: medicamento.nome,
             },
             android: {
               channelId: 'alarme_medicamento',
               priority: 'max',
               color: '#5B8C6E',
-              ongoing: true,
-              autoCancel: false,
+              // ✅ CORRIGIDO: ongoing false e autoCancel true
+              ongoing: false,
+              autoCancel: true,
               vibrate: [0, 1000, 500, 1000, 500, 1000],
               actions: [
                 {
@@ -221,48 +196,56 @@ export const agendarAlarmesMedicamento = async (medicamento, nomeIdoso, alarmeAt
 
         todosIds.push(id);
 
-        // Alarme de reforço (5 minutos depois) para o dia atual
+        // Alarme de reforço (5 minutos depois) apenas para o dia atual
         if (dia === 0) {
           const dataReforco = new Date(dataAlarme.getTime() + 5 * 60 * 1000);
-          const idReforco = await Notifications.scheduleNotificationAsync({
-            content: {
-              title: `⚠️ ${medicamento.nome} — PENDENTE!`,
-              body: `${medicamento.dose}\n👤 ${nomeIdoso}\nNão se esqueça!`,
-              sound: 'default',
-              sticky: true,
-              autoDismiss: false,
-              data: {
-                tipo: 'alarme_reforco',
-                medicamentoId: medicamento.id,
+          if (dataReforco > new Date()) {
+            const idReforco = await Notifications.scheduleNotificationAsync({
+              content: {
+                title: `⚠️ ${medicamento.nome} — PENDENTE!`,
+                body: `${medicamento.dose}\n👤 ${nomeIdoso}\nNão se esqueça!`,
+                sound: 'default',
+                // ✅ CORRIGIDO: some ao tocar
+                sticky: false,
+                autoDismiss: true,
+                data: {
+                  tipo: 'alarme_reforco',
+                  medicamentoId: medicamento.id,
+                  horario,
+                  nomeIdoso,
+                  nomeMed: medicamento.nome,
+                },
+                android: {
+                  channelId: 'alarme_medicamento',
+                  priority: 'max',
+                  color: '#BA1A1A',
+                  ongoing: false,
+                  autoCancel: true,
+                  vibrate: [0, 1000, 500, 1000],
+                  actions: [
+                    {
+                      identifier: 'TOMEI',
+                      title: '✅ Tomei o remédio',
+                    },
+                    {
+                      identifier: 'LEMBRAR_10MIN',
+                      title: '⏰ Lembrar em 10 min',
+                    },
+                  ],
+                },
               },
-              android: {
+              trigger: {
+                date: dataReforco,
                 channelId: 'alarme_medicamento',
-                priority: 'max',
-                color: '#BA1A1A',
-                ongoing: true,
-                autoCancel: false,
-                vibrate: [0, 1000, 500, 1000],
-                actions: [
-                  {
-                    identifier: 'TOMEI',
-                    title: '✅ Tomei o remédio',
-                  },
-                ],
               },
-            },
-            trigger: {
-              date: dataReforco,
-              channelId: 'alarme_medicamento',
-            },
-          });
-          todosIds.push(idReforco);
+            });
+            todosIds.push(idReforco);
+          }
         }
       }
     }
 
-    // Salvar registro dos alarmes agendados
     await salvarRegistroAlarmes(medicamento.id, todosIds, medicamento);
-
     console.log(`[AlarmManager] ${todosIds.length} alarmes agendados para ${medicamento.nome}`);
     return todosIds;
 
@@ -272,7 +255,7 @@ export const agendarAlarmesMedicamento = async (medicamento, nomeIdoso, alarmeAt
   }
 };
 
-// ── Salvar registro dos alarmes ─────────────────────────────
+// ── Salvar registro ─────────────────────────────────────────
 const salvarRegistroAlarmes = async (medicamentoId, notifIds, medicamento) => {
   try {
     const registros = JSON.parse(await AsyncStorage.getItem(CHAVE_ALARMES) || '{}');
@@ -293,7 +276,7 @@ const salvarRegistroAlarmes = async (medicamentoId, notifIds, medicamento) => {
   }
 };
 
-// ── Verificar e reagendar alarmes (Background Task) ─────────
+// ── Verificar e reagendar ───────────────────────────────────
 const verificarEReagendarAlarmes = async () => {
   try {
     const registros = JSON.parse(await AsyncStorage.getItem(CHAVE_ALARMES) || '{}');
@@ -302,13 +285,8 @@ const verificarEReagendarAlarmes = async () => {
 
     for (const [medId, registro] of Object.entries(registros)) {
       if (!registro.usoContinuo) continue;
-
-      // Verificar se ainda há notificações agendadas
       const aindaAgendadas = registro.notifIds.filter((id) => idsAgendados.has(id));
-
-      // Se restam menos de 30 notificações, reagendar
       if (aindaAgendadas.length < 30) {
-        console.log(`[AlarmManager] Reagendando alarmes para ${registro.nome}`);
         const medicamento = {
           id: medId,
           nome: registro.nome,
@@ -321,33 +299,30 @@ const verificarEReagendarAlarmes = async () => {
       }
     }
   } catch (error) {
-    console.error('[AlarmManager] Erro ao verificar alarmes:', error);
+    console.error('[AlarmManager] Erro ao verificar:', error);
   }
 };
 
-// ── Cancelar alarmes de um medicamento ─────────────────────
+// ── Cancelar alarmes ────────────────────────────────────────
 export const cancelarAlarmesMedicamento = async (notifIds = []) => {
   for (const id of notifIds) {
     try {
       await Notifications.cancelScheduledNotificationAsync(id);
-    } catch (e) {
-      // Ignorar erros de IDs já cancelados
-    }
+    } catch (e) {}
   }
 };
 
-// ── Cancelar todos os alarmes ───────────────────────────────
 export const cancelarTodosAlarmes = async () => {
   try {
     await Notifications.cancelAllScheduledNotificationsAsync();
+    await Notifications.dismissAllNotificationsAsync(); // ✅ Limpa notificações da barra
     await AsyncStorage.removeItem(CHAVE_ALARMES);
-    console.log('[AlarmManager] Todos os alarmes cancelados');
   } catch (error) {
     console.error('[AlarmManager] Erro:', error);
   }
 };
 
-// ── Notificação de consulta ─────────────────────────────────
+// ── Consulta ────────────────────────────────────────────────
 export const agendarNotificacaoConsulta = async (consulta, nomeIdoso) => {
   try {
     const dataConsulta = new Date(consulta.dataHoraISO);
@@ -359,8 +334,15 @@ export const agendarNotificacaoConsulta = async (consulta, nomeIdoso) => {
         title: '📅 Consulta Amanhã!',
         body: `${nomeIdoso} — ${consulta.especialidade || 'Consulta'}\n⏰ ${consulta.horario}${consulta.local ? `\n📍 ${consulta.local}` : ''}`,
         sound: 'default',
-        data: { tipo: 'consulta', consultaId: consulta.id },
-        android: { channelId: 'consultas', priority: 'high', color: '#5B67CA' },
+        autoDismiss: true,
+        data: { tipo: 'consulta', consultaId: consulta.id, nomeIdoso },
+        android: {
+          channelId: 'consultas',
+          priority: 'high',
+          color: '#5B67CA',
+          ongoing: false,
+          autoCancel: true,
+        },
       },
       trigger: { date: dataAlerta },
     });
@@ -371,7 +353,7 @@ export const agendarNotificacaoConsulta = async (consulta, nomeIdoso) => {
   }
 };
 
-// ── Lembretes de hidratação ─────────────────────────────────
+// ── Hidratação ──────────────────────────────────────────────
 export const agendarLembretesHidratacao = async (nomeIdoso, pesoKg) => {
   try {
     const litros = ((pesoKg * 35) / 1000).toFixed(1);
@@ -383,8 +365,15 @@ export const agendarLembretesHidratacao = async (nomeIdoso, pesoKg) => {
           title: '💧 Hora de se hidratar!',
           body: `Ofereça água para ${nomeIdoso}\nMeta: ${litros} litros/dia`,
           sound: 'default',
-          data: { tipo: 'hidratacao' },
-          android: { channelId: 'hidratacao', priority: 'default', color: '#3B82F6' },
+          autoDismiss: true,
+          data: { tipo: 'hidratacao', nomeIdoso },
+          android: {
+            channelId: 'hidratacao',
+            priority: 'default',
+            color: '#3B82F6',
+            ongoing: false,
+            autoCancel: true,
+          },
         },
         trigger: { hour, minute: 0, repeats: true },
       });
@@ -394,17 +383,21 @@ export const agendarLembretesHidratacao = async (nomeIdoso, pesoKg) => {
   }
 };
 
-// ── Teste de notificação ────────────────────────────────────
+// ── Teste ───────────────────────────────────────────────────
 export const enviarNotificacaoTeste = async () => {
   try {
     await Notifications.scheduleNotificationAsync({
       content: {
         title: '✅ LIA — Alarme funcionando!',
-        body: 'O sistema de alarmes está configurado corretamente.',
+        body: 'Toque aqui para ir para os medicamentos.',
         sound: 'default',
+        autoDismiss: true,
+        data: { tipo: 'alarme_medicamento' },
         android: {
           channelId: 'alarme_medicamento',
           priority: 'max',
+          ongoing: false,
+          autoCancel: true,
           vibrate: [0, 500, 300, 500],
         },
       },
@@ -415,8 +408,8 @@ export const enviarNotificacaoTeste = async () => {
   }
 };
 
-// ── Obter resumo dos alarmes ativos ────────────────────────
-export const getAlaramesAtivos = async () => {
+// ── Obter alarmes ativos ────────────────────────────────────
+export const getAlarmesAtivos = async () => {
   try {
     const registros = JSON.parse(await AsyncStorage.getItem(CHAVE_ALARMES) || '{}');
     return Object.values(registros);
