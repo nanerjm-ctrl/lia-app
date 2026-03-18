@@ -1,6 +1,6 @@
 // ============================================================
-// HOME SCREEN ATUALIZADA - LIA App
-// Dashboard com botão "✅ Tomei" nos medicamentos do dia
+// HOME SCREEN - LIA App
+// Corrigido: botão Tomei funcionando + notificações sumindo
 // ============================================================
 
 import React, { useState, useCallback } from 'react';
@@ -11,16 +11,17 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import * as Notifications from 'expo-notifications';
 
 import { Colors, Typography, Spacing, BorderRadius, Elevation } from '../theme';
-import { Card, SectionHeader, Badge, HorarioPill } from '../components';
+import { Card, SectionHeader, Badge } from '../components';
 import {
   CuidadorStorage, IdosoStorage, ConsultaStorage, MedicamentoStorage
 } from '../storage';
 import {
-  marcarComoTomado, desmarcarTomado, jaFoiTomado, getTomadosHoje
+  marcarComoTomado, desmarcarTomado, getTomadosHoje
 } from '../services/medicamentosTomados';
-import { formatarDataHora, calcularIMC, calcularIdade } from '../services/helpers';
+import { calcularIMC, calcularIdade } from '../services/helpers';
 
 export default function HomeScreen() {
   const navigation = useNavigation();
@@ -67,20 +68,19 @@ export default function HomeScreen() {
   const getNomeIdoso = (idosoId) =>
     idosos.find((i) => i.id === idosoId)?.nome || 'Desconhecido';
 
-  // Verificar se medicamento+horario já foi tomado
+  // ✅ Verificar se foi tomado
   const isTomado = (medicamentoId, horario) => {
     const hoje = new Date().toISOString().split('T')[0];
     const chave = `${medicamentoId}_${hoje}_${horario}`;
     return tomadosHoje.some((t) => t.chave === chave);
   };
 
-  // Marcar/desmarcar medicamento
+  // ✅ Marcar/desmarcar tomado COM dismiss da notificação
   const handleTomado = async (med, horario) => {
     const tomado = isTomado(med.id, horario);
     const nomeIdoso = getNomeIdoso(med.idosoId);
 
     if (tomado) {
-      // Desmarcar
       Alert.alert(
         'Desfazer?',
         `Desmarcar "${med.nome}" (${horario}) como tomado?`,
@@ -90,22 +90,42 @@ export default function HomeScreen() {
             text: 'Desmarcar',
             onPress: async () => {
               await desmarcarTomado(med.id, horario);
-              carregarDados();
+              await carregarDados();
             },
           },
         ]
       );
     } else {
-      // Marcar como tomado
+      // ✅ Marcar como tomado
       await marcarComoTomado(med.id, horario, med.nome, nomeIdoso);
-      carregarDados();
+
+      // ✅ Dispensar TODAS as notificações deste medicamento da barra
+      try {
+        const notificacoesAtivas = await Notifications.getPresentedNotificationsAsync();
+        for (const notif of notificacoesAtivas) {
+          const data = notif.request.content.data;
+          if (data?.medicamentoId === med.id) {
+            await Notifications.dismissNotificationAsync(notif.request.identifier);
+          }
+        }
+      } catch (e) {
+        console.warn('[Home] Erro ao dispensar notificações:', e);
+      }
+
+      await carregarDados();
+
+      // Feedback visual
+      Alert.alert(
+        '✅ Registrado!',
+        `${med.nome} (${horario}) marcado como tomado!`,
+        [{ text: 'OK' }]
+      );
     }
   };
 
   const hora = new Date().getHours();
   const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
 
-  // Contar medicamentos pendentes hoje
   const totalMedsPendentes = medicamentosHoje.reduce((acc, med) => {
     const pendentes = (med.horarios || []).filter(
       (h) => !isTomado(med.id, h)
@@ -126,7 +146,7 @@ export default function HomeScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Header ── */}
+        {/* Header */}
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
             <Text style={styles.saudacao}>{saudacao}! 👋</Text>
@@ -153,7 +173,7 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ── Alerta consultas amanhã ── */}
+        {/* Alerta consultas amanhã */}
         {alertasAmanha.length > 0 && (
           <Card style={[styles.alertCard, { backgroundColor: Colors.tertiaryContainer }]}>
             <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
@@ -173,13 +193,12 @@ export default function HomeScreen() {
           </Card>
         )}
 
-        {/* ── Cards dos idosos ── */}
+        {/* Cards idosos */}
         <SectionHeader
           title="Meus Idosos"
           action={() => navigation.navigate('Idosos')}
           actionLabel="Gerenciar"
         />
-
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -216,25 +235,18 @@ export default function HomeScreen() {
               </TouchableOpacity>
             );
           })}
-
-          {/* Botão adicionar idoso */}
           <TouchableOpacity
             style={styles.addIdosoCard}
             onPress={() => navigation.navigate('IdosoForm')}
-            activeOpacity={0.85}
           >
             <Ionicons name="add-circle" size={36} color={Colors.primary} />
             <Text style={styles.addIdosoText}>Novo{'\n'}Idoso</Text>
           </TouchableOpacity>
         </ScrollView>
 
-        {/* ── Medicamentos de hoje ── */}
-        <View style={styles.medsSectionHeader}>
-          <SectionHeader
-            title="💊 Remédios de Hoje"
-            action={() => navigation.navigate('Medicamentos')}
-          />
-          {/* Badge de pendentes */}
+        {/* Medicamentos de hoje */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing.md }}>
+          <SectionHeader title="💊 Remédios de Hoje" />
           {totalMedsPendentes > 0 && (
             <View style={styles.pendenteBadge}>
               <Text style={styles.pendenteBadgeText}>
@@ -262,49 +274,52 @@ export default function HomeScreen() {
                 </View>
               </View>
 
-              {/* Horários com botão Tomei */}
+              {/* ✅ Horários com botão Tomei funcionando */}
               {med.horarios?.length > 0 && (
                 <View style={styles.horariosContainer}>
-                  {med.horarios.map((h, i) => {
-                    const tomado = isTomado(med.id, h);
-                    return (
-                      <TouchableOpacity
-                        key={i}
-                        style={[
-                          styles.horarioBotao,
-                          tomado && styles.horarioBotaoTomado,
-                        ]}
-                        onPress={() => handleTomado(med, h)}
-                        activeOpacity={0.8}
-                      >
-                        <Ionicons
-                          name={tomado ? 'checkmark-circle' : 'time-outline'}
-                          size={14}
-                          color={tomado ? Colors.success : Colors.secondary}
-                        />
-                        <Text
+                  <Text style={styles.horariosLabel}>Toque no horário para marcar:</Text>
+                  <View style={styles.horariosRow}>
+                    {med.horarios.map((h, i) => {
+                      const tomado = isTomado(med.id, h);
+                      return (
+                        <TouchableOpacity
+                          key={i}
                           style={[
+                            styles.horarioBotao,
+                            tomado && styles.horarioBotaoTomado,
+                          ]}
+                          onPress={() => handleTomado(med, h)}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons
+                            name={tomado ? 'checkmark-circle' : 'time-outline'}
+                            size={16}
+                            color={tomado ? '#059669' : Colors.secondary}
+                          />
+                          <Text style={[
                             styles.horarioBotaoText,
                             tomado && styles.horarioBotaoTextTomado,
-                          ]}
-                        >
-                          {h} {tomado ? '✓' : ''}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
+                          ]}>
+                            {h}
+                          </Text>
+                          {tomado && (
+                            <Text style={styles.tomadoLabel}> Tomado</Text>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
                 </View>
               )}
             </Card>
           ))
         )}
 
-        {/* ── Próximas consultas ── */}
+        {/* Próximas consultas */}
         <SectionHeader
           title="📅 Próximas Consultas"
           action={() => navigation.navigate('Consultas')}
         />
-
         {proximasConsultas.length === 0 ? (
           <Card style={styles.emptyCard}>
             <Text style={styles.emptyCardText}>Nenhuma consulta agendada</Text>
@@ -332,8 +347,7 @@ export default function HomeScreen() {
                     </Text>
                     <Text style={styles.consultaIdoso}>{getNomeIdoso(c.idosoId)}</Text>
                     <Text style={styles.consultaInfo}>
-                      ⏰ {c.horario}
-                      {c.local ? `  📍 ${c.local}` : ''}
+                      ⏰ {c.horario}{c.local ? `  📍 ${c.local}` : ''}
                     </Text>
                   </View>
                   <Ionicons name="chevron-forward" size={20} color={Colors.outline} />
@@ -355,7 +369,6 @@ export default function HomeScreen() {
         <View style={{ height: 80 }} />
       </ScrollView>
 
-      {/* Setup inicial */}
       {!cuidador && (
         <TouchableOpacity
           style={styles.setupBanner}
@@ -379,14 +392,8 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg, paddingTop: Spacing.sm,
   },
   saudacao: { ...Typography.bodySmall, color: Colors.outline },
-  headerTitle: {
-    ...Typography.headlineMedium,
-    color: Colors.onBackground, fontWeight: '700',
-  },
-  headerSub: {
-    ...Typography.bodySmall, color: Colors.outline,
-    marginTop: 2, textTransform: 'capitalize',
-  },
+  headerTitle: { ...Typography.headlineMedium, color: Colors.onBackground, fontWeight: '700' },
+  headerSub: { ...Typography.bodySmall, color: Colors.outline, marginTop: 2, textTransform: 'capitalize' },
   headerAvatar: { marginLeft: Spacing.md },
   headerAvatarImg: { width: 52, height: 52, borderRadius: 26 },
   headerAvatarPlaceholder: {
@@ -415,19 +422,10 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     marginBottom: Spacing.sm,
   },
-  idosoInitial: {
-    ...Typography.headlineSmall,
-    color: Colors.primary, fontWeight: '700',
-  },
-  idosoNome: {
-    ...Typography.labelMedium,
-    color: Colors.onSurface, textAlign: 'center', fontWeight: '600',
-  },
+  idosoInitial: { ...Typography.headlineSmall, color: Colors.primary, fontWeight: '700' },
+  idosoNome: { ...Typography.labelMedium, color: Colors.onSurface, textAlign: 'center', fontWeight: '600' },
   idosoIdade: { ...Typography.labelSmall, color: Colors.outline, marginTop: 2 },
-  imcBadge: {
-    paddingHorizontal: 8, paddingVertical: 3,
-    borderRadius: BorderRadius.full, marginTop: 6,
-  },
+  imcBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: BorderRadius.full, marginTop: 6 },
   imcBadgeText: { ...Typography.labelSmall, fontWeight: '700' },
 
   addIdosoCard: {
@@ -437,27 +435,17 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     marginRight: Spacing.sm,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderStyle: 'dashed',
-    borderColor: Colors.primary,
+    borderWidth: 2, borderStyle: 'dashed', borderColor: Colors.primary,
     minHeight: 130,
   },
-  addIdosoText: {
-    ...Typography.labelMedium,
-    color: Colors.primary, textAlign: 'center',
-    marginTop: Spacing.sm, fontWeight: '600',
-  },
+  addIdosoText: { ...Typography.labelMedium, color: Colors.primary, textAlign: 'center', marginTop: Spacing.sm, fontWeight: '600' },
 
-  medsSectionHeader: { position: 'relative' },
   pendenteBadge: {
-    position: 'absolute', right: 0, top: Spacing.md,
     backgroundColor: Colors.errorContainer,
     paddingHorizontal: Spacing.sm, paddingVertical: 3,
     borderRadius: BorderRadius.full,
   },
-  pendenteBadgeText: {
-    ...Typography.labelSmall,
-    color: Colors.error, fontWeight: '700',
-  },
+  pendenteBadgeText: { ...Typography.labelSmall, color: Colors.error, fontWeight: '700' },
 
   emptyCard: { alignItems: 'center', paddingVertical: Spacing.lg, marginBottom: Spacing.sm },
   emptyCardText: { ...Typography.bodyMedium, color: Colors.outline },
@@ -472,28 +460,29 @@ const styles = StyleSheet.create({
   medDose: { ...Typography.bodySmall, color: Colors.secondary },
   medIdoso: { ...Typography.labelSmall, color: Colors.outline },
 
-  horariosContainer: {
-    flexDirection: 'row', flexWrap: 'wrap',
-    marginTop: Spacing.sm, gap: 6,
-  },
+  horariosContainer: { marginTop: Spacing.sm },
+  horariosLabel: { ...Typography.labelSmall, color: Colors.outline, marginBottom: 6 },
+  horariosRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+
+  // ✅ Botão de horário grande e clicável
   horarioBotao: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: Spacing.sm, paddingVertical: 6,
+    paddingHorizontal: Spacing.md, paddingVertical: 10,
     borderRadius: BorderRadius.full,
     backgroundColor: Colors.secondaryContainer,
-    borderWidth: 1.5, borderColor: Colors.secondary,
+    borderWidth: 2, borderColor: Colors.secondary,
+    minHeight: 44, // Mínimo 44px para facilitar toque
   },
   horarioBotaoTomado: {
-    backgroundColor: Colors.successContainer || '#D1FAE5',
-    borderColor: Colors.success,
+    backgroundColor: '#D1FAE5',
+    borderColor: '#059669',
   },
   horarioBotaoText: {
-    ...Typography.labelSmall,
-    color: Colors.secondary, marginLeft: 4, fontWeight: '600',
+    ...Typography.labelLarge,
+    color: Colors.secondary, marginLeft: 6, fontWeight: '700',
   },
-  horarioBotaoTextTomado: {
-    color: Colors.success,
-  },
+  horarioBotaoTextTomado: { color: '#059669' },
+  tomadoLabel: { ...Typography.labelSmall, color: '#059669', fontWeight: '600' },
 
   consultaCard: { marginBottom: Spacing.sm },
   consultaDateBox: {
@@ -514,9 +503,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg,
     borderWidth: 1, borderColor: Colors.outlineVariant,
   },
-  configBtnText: {
-    ...Typography.labelMedium, color: Colors.outline, marginLeft: Spacing.sm,
-  },
+  configBtnText: { ...Typography.labelMedium, color: Colors.outline, marginLeft: Spacing.sm },
 
   setupBanner: {
     position: 'absolute', bottom: 90, left: Spacing.md, right: Spacing.md,
@@ -525,7 +512,5 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     ...Elevation.level3,
   },
-  setupBannerText: {
-    ...Typography.labelLarge, color: Colors.onPrimary, marginLeft: Spacing.sm,
-  },
+  setupBannerText: { ...Typography.labelLarge, color: Colors.onPrimary, marginLeft: Spacing.sm },
 });

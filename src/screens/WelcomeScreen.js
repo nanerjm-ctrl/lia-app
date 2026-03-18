@@ -1,7 +1,6 @@
 // ============================================================
 // WELCOME SCREEN - LIA App
-// Tela de boas-vindas para primeiro acesso
-// Guia o usuário a cadastrar o cuidador
+// Corrigido: logo LIA carregando corretamente
 // ============================================================
 
 import React, { useState } from 'react';
@@ -13,12 +12,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius } from '../theme';
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+const { width: SCREEN_W } = Dimensions.get('window');
+
+// ✅ Logo LIA referenciada corretamente
+const LOGO_LIA = require('../../assets/logo_Lia.png');
 
 const SLIDES = [
   {
     id: 1,
-    icon: 'heart-circle',
+    usarLogo: true, // ✅ Primeiro slide usa a logo LIA
     iconColor: Colors.primary,
     titulo: 'Bem-vindo ao LIA!',
     subtitulo: 'Seu assistente digital de cuidado para idosos',
@@ -61,9 +63,7 @@ export default function WelcomeScreen({ navigation }) {
     }
   };
 
-  const pular = () => {
-    navigation.replace('Tabs');
-  };
+  const pular = () => navigation.replace('Tabs');
 
   const slide = SLIDES[slideAtual];
   const isUltimo = slideAtual === SLIDES.length - 1;
@@ -77,14 +77,25 @@ export default function WelcomeScreen({ navigation }) {
         </TouchableOpacity>
       )}
 
-      {/* Conteúdo do slide */}
+      {/* Conteúdo */}
       <View style={styles.content}>
-        {/* Ícone grande */}
-        <View style={[styles.iconBox, { backgroundColor: slide.iconColor + '22' }]}>
-          <Ionicons name={slide.icon} size={100} color={slide.iconColor} />
-        </View>
 
-        {/* Logo LIA */}
+        {/* ✅ Primeiro slide mostra a logo LIA real */}
+        {slide.usarLogo ? (
+          <View style={styles.logoContainer}>
+            <Image
+              source={LOGO_LIA}
+              style={styles.logoImg}
+              resizeMode="contain"
+            />
+          </View>
+        ) : (
+          <View style={[styles.iconBox, { backgroundColor: slide.iconColor + '22' }]}>
+            <Ionicons name={slide.icon} size={100} color={slide.iconColor} />
+          </View>
+        )}
+
+        {/* Tag LIA */}
         <View style={styles.liaTag}>
           <Text style={styles.liaTagText}>LIA</Text>
         </View>
@@ -94,20 +105,17 @@ export default function WelcomeScreen({ navigation }) {
         <Text style={styles.desc}>{slide.desc}</Text>
       </View>
 
-      {/* Indicadores de progresso */}
+      {/* Indicadores */}
       <View style={styles.dotsRow}>
         {SLIDES.map((_, idx) => (
           <View
             key={idx}
-            style={[
-              styles.dot,
-              idx === slideAtual && styles.dotAtivo,
-            ]}
+            style={[styles.dot, idx === slideAtual && styles.dotAtivo]}
           />
         ))}
       </View>
 
-      {/* Botão próximo/começar */}
+      {/* Botão */}
       <TouchableOpacity
         style={[styles.btnProximo, isUltimo && styles.btnComecar]}
         onPress={proximo}
@@ -121,7 +129,6 @@ export default function WelcomeScreen({ navigation }) {
         )}
       </TouchableOpacity>
 
-      {/* Aviso de configuração */}
       {isUltimo && (
         <Text style={styles.avisoConfig}>
           Primeiro vamos configurar o perfil do cuidador
@@ -139,22 +146,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.xl,
   },
-
   pularBtn: {
     alignSelf: 'flex-end',
     padding: Spacing.md,
     marginTop: Spacing.sm,
   },
-  pularText: {
-    ...Typography.labelLarge,
-    color: Colors.outline,
-  },
+  pularText: { ...Typography.labelLarge, color: Colors.outline },
 
   content: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing.md,
+  },
+
+  // ✅ Container da logo LIA
+  logoContainer: {
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: Colors.primaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.lg,
+    overflow: 'hidden',
+  },
+  logoImg: {
+    width: 180,
+    height: 180,
   },
 
   iconBox: {
@@ -193,42 +212,28 @@ const styles = StyleSheet.create({
     textAlign: 'center', lineHeight: 26,
   },
 
-  dotsRow: {
-    flexDirection: 'row',
-    marginBottom: Spacing.lg,
-  },
+  dotsRow: { flexDirection: 'row', marginBottom: Spacing.lg },
   dot: {
-    width: 8, height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.outlineVariant,
-    marginHorizontal: 4,
+    width: 8, height: 8, borderRadius: 4,
+    backgroundColor: Colors.outlineVariant, marginHorizontal: 4,
   },
-  dotAtivo: {
-    width: 24,
-    backgroundColor: Colors.primary,
-  },
+  dotAtivo: { width: 24, backgroundColor: Colors.primary },
 
   btnProximo: {
     flexDirection: 'row',
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: Colors.primary,
     borderRadius: BorderRadius.full,
-    paddingVertical: 16,
-    paddingHorizontal: Spacing.xxl,
-    width: '100%',
-    minHeight: 56,
+    paddingVertical: 16, paddingHorizontal: Spacing.xxl,
+    width: '100%', minHeight: 56,
   },
-  btnComecar: {
-    backgroundColor: Colors.secondary,
-  },
+  btnComecar: { backgroundColor: Colors.secondary },
   btnProximoText: {
     ...Typography.titleMedium,
     color: Colors.onPrimary, fontWeight: '700',
   },
-
   avisoConfig: {
     ...Typography.bodySmall,
-    color: Colors.outline,
-    marginTop: Spacing.md, textAlign: 'center',
+    color: Colors.outline, marginTop: Spacing.md, textAlign: 'center',
   },
 });
