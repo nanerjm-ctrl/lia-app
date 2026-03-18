@@ -1,11 +1,12 @@
 // ============================================================
 // CONSULTAS SCREEN - LIA App
-// Lista de consultas médicas por idoso
+// Atualizado com busca e filtros melhorados
 // ============================================================
 
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, Image
+  View, Text, StyleSheet, FlatList, TouchableOpacity,
+  Alert, Image, TextInput
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,7 +15,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Colors, Typography, Spacing, BorderRadius, Elevation } from '../theme';
 import { FAB, EmptyState, ConfirmModal, Badge, ScreenHeader } from '../components';
 import { ConsultaStorage, IdosoStorage } from '../storage';
-import { formatarDataHora } from '../services/helpers';
+import { formatarDataHora, filtrarPorBusca } from '../services/helpers';
 
 export default function ConsultasScreen() {
   const navigation = useNavigation();
@@ -22,7 +23,8 @@ export default function ConsultasScreen() {
   const [idosos, setIdosos] = useState([]);
   const [deletingId, setDeletingId] = useState(null);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [aba, setAba] = useState('proximas'); // proximas | todas
+  const [aba, setAba] = useState('proximas');
+  const [busca, setBusca] = useState('');
 
   useFocusEffect(
     useCallback(() => {
@@ -46,30 +48,31 @@ export default function ConsultasScreen() {
   const getFotoIdoso = (id) => idosos.find((i) => i.id === id)?.foto || null;
 
   const agora = new Date();
-  const consultasFiltradas =
-    aba === 'proximas'
+
+  // Filtrar por aba + busca
+  const consultasFiltradas = (() => {
+    let lista = aba === 'proximas'
       ? consultas.filter((c) => new Date(c.dataHoraISO) >= agora)
       : consultas;
+
+    return filtrarPorBusca(lista, busca, ['especialidade', 'medico', 'local', 'observacoes']);
+  })();
 
   const isHoje = (iso) => {
     const d = new Date(iso);
     const hoje = new Date();
-    return (
-      d.getDate() === hoje.getDate() &&
+    return d.getDate() === hoje.getDate() &&
       d.getMonth() === hoje.getMonth() &&
-      d.getFullYear() === hoje.getFullYear()
-    );
+      d.getFullYear() === hoje.getFullYear();
   };
 
   const isAmanha = (iso) => {
     const d = new Date(iso);
     const amanha = new Date();
     amanha.setDate(amanha.getDate() + 1);
-    return (
-      d.getDate() === amanha.getDate() &&
+    return d.getDate() === amanha.getDate() &&
       d.getMonth() === amanha.getMonth() &&
-      d.getFullYear() === amanha.getFullYear()
-    );
+      d.getFullYear() === amanha.getFullYear();
   };
 
   const confirmarExclusao = (id) => {
@@ -108,13 +111,16 @@ export default function ConsultasScreen() {
 
         {/* Info */}
         <View style={{ flex: 1, marginLeft: Spacing.md }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-            <Text style={styles.especialidade}>{item.especialidade || 'Consulta Médica'}</Text>
-            {hoje && <Badge label="Hoje" color={Colors.success} />}
-            {amanha && <Badge label="Amanhã" color={Colors.warning} />}
-            {passada && <Badge label="Realizada" color={Colors.outline} />}
+          <View style={styles.badgesRow}>
+            <Text style={styles.especialidade} numberOfLines={1}>
+              {item.especialidade || 'Consulta Médica'}
+            </Text>
+            {hoje && <Badge label="Hoje" color={Colors.success} style={{ marginLeft: 6 }} />}
+            {amanha && <Badge label="Amanhã" color={Colors.warning} style={{ marginLeft: 6 }} />}
+            {passada && <Badge label="Realizada" color={Colors.outline} style={{ marginLeft: 6 }} />}
           </View>
 
+          {/* Idoso */}
           <View style={styles.idosoRow}>
             {foto ? (
               <Image source={{ uri: foto }} style={styles.idosoFoto} />
@@ -126,22 +132,25 @@ export default function ConsultasScreen() {
             <Text style={styles.idosoNome}>{getNomeIdoso(item.idosoId)}</Text>
           </View>
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+          {/* Hora */}
+          <View style={styles.infoRow}>
             <Ionicons name="time-outline" size={13} color={Colors.outline} />
-            <Text style={styles.infoSmall}> {item.horario}</Text>
+            <Text style={styles.infoText}> {item.horario}</Text>
           </View>
 
+          {/* Médico */}
           {item.medico && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+            <View style={styles.infoRow}>
               <Ionicons name="person-circle-outline" size={13} color={Colors.outline} />
-              <Text style={styles.infoSmall}> {item.medico}</Text>
+              <Text style={styles.infoText} numberOfLines={1}> {item.medico}</Text>
             </View>
           )}
 
+          {/* Local */}
           {item.local && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+            <View style={styles.infoRow}>
               <Ionicons name="location-outline" size={13} color={Colors.outline} />
-              <Text style={styles.infoSmall} numberOfLines={1}> {item.local}</Text>
+              <Text style={styles.infoText} numberOfLines={1}> {item.local}</Text>
             </View>
           )}
 
@@ -176,6 +185,23 @@ export default function ConsultasScreen() {
         subtitle={`${consultasFiltradas.length} consulta${consultasFiltradas.length !== 1 ? 's' : ''}`}
       />
 
+      {/* Busca */}
+      <View style={styles.buscaContainer}>
+        <Ionicons name="search-outline" size={20} color={Colors.outline} style={styles.buscaIcon} />
+        <TextInput
+          style={styles.buscaInput}
+          placeholder="Buscar por especialidade, médico, local..."
+          placeholderTextColor={Colors.outline}
+          value={busca}
+          onChangeText={setBusca}
+        />
+        {busca.length > 0 && (
+          <TouchableOpacity onPress={() => setBusca('')}>
+            <Ionicons name="close-circle" size={20} color={Colors.outline} />
+          </TouchableOpacity>
+        )}
+      </View>
+
       {/* Abas */}
       <View style={styles.tabsRow}>
         <TouchableOpacity
@@ -207,10 +233,10 @@ export default function ConsultasScreen() {
         ListEmptyComponent={
           <EmptyState
             icon="calendar-outline"
-            title="Nenhuma consulta"
-            subtitle="Agende consultas para receber lembretes 24h antes"
-            action={() => navigation.navigate('ConsultaForm')}
-            actionLabel="Agendar consulta"
+            title={busca ? 'Nenhum resultado encontrado' : 'Nenhuma consulta'}
+            subtitle={busca ? `Nenhuma consulta com "${busca}"` : 'Agende consultas para receber lembretes 24h antes'}
+            action={busca ? () => setBusca('') : () => navigation.navigate('ConsultaForm')}
+            actionLabel={busca ? 'Limpar busca' : 'Agendar consulta'}
           />
         }
       />
@@ -220,7 +246,7 @@ export default function ConsultasScreen() {
       <ConfirmModal
         visible={showConfirm}
         title="Excluir Consulta"
-        message="Deseja remover esta consulta?"
+        message="Deseja remover esta consulta? O lembrete associado também será cancelado."
         onConfirm={excluir}
         onCancel={() => setShowConfirm(false)}
         confirmLabel="Remover"
@@ -232,6 +258,17 @@ export default function ConsultasScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   list: { padding: Spacing.md, paddingBottom: 100 },
+
+  buscaContainer: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: Colors.surface,
+    marginHorizontal: Spacing.md, marginVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1.5, borderColor: Colors.outlineVariant,
+    paddingHorizontal: Spacing.md, height: 48,
+  },
+  buscaIcon: { marginRight: Spacing.sm },
+  buscaInput: { flex: 1, ...Typography.bodyMedium, color: Colors.onSurface },
 
   tabsRow: {
     flexDirection: 'row',
@@ -267,6 +304,7 @@ const styles = StyleSheet.create({
   dateMonth: { ...Typography.labelSmall, color: Colors.primary, textTransform: 'uppercase' },
   dateYear: { ...Typography.labelSmall, color: Colors.primary },
 
+  badgesRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
   especialidade: { ...Typography.titleSmall, color: Colors.onSurface, fontWeight: '700' },
 
   idosoRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
@@ -279,7 +317,8 @@ const styles = StyleSheet.create({
   idosoInitial: { fontSize: 10, color: Colors.primary, fontWeight: '700' },
   idosoNome: { ...Typography.labelMedium, color: Colors.outline, marginLeft: 6 },
 
-  infoSmall: { ...Typography.labelSmall, color: Colors.outline },
+  infoRow: { flexDirection: 'row', alignItems: 'center', marginTop: 3 },
+  infoText: { ...Typography.labelSmall, color: Colors.outline },
   obsText: { ...Typography.labelSmall, color: Colors.outline, marginTop: 4 },
 
   actions: { alignItems: 'center', justifyContent: 'center' },

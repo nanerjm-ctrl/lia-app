@@ -1,19 +1,22 @@
 // ============================================================
 // IDOSO FORM SCREEN - LIA App
-// Cadastro e edição de idoso (formulário completo)
+// Atualizado com confirmação ao sair sem salvar
 // ============================================================
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, Alert, TouchableOpacity, Image
+  View, Text, ScrollView, StyleSheet, Alert,
+  TouchableOpacity, Image, BackHandler
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 
 import { Colors, Typography, Spacing, BorderRadius } from '../theme';
 import {
-  Card, Button, InputField, Avatar, Chip, ToggleField, ScreenHeader, IMCCard
+  Card, Button, InputField, Avatar, Chip,
+  ToggleField, ScreenHeader, IMCCard
 } from '../components';
 import { IdosoStorage } from '../storage';
 import {
@@ -24,7 +27,6 @@ export default function IdosoFormScreen({ navigation, route }) {
   const idosoId = route?.params?.idosoId;
   const isEdit = !!idosoId;
 
-  // Campos do formulário
   const [nome, setNome] = useState('');
   const [foto, setFoto] = useState(null);
   const [dataNasc, setDataNasc] = useState('');
@@ -37,12 +39,41 @@ export default function IdosoFormScreen({ navigation, route }) {
   const [observacoes, setObservacoes] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [errors, setErrors] = useState({});
+  const [temAlteracoes, setTemAlteracoes] = useState(false);
 
   const imc = calcularIMC(parseFloat(peso), parseFloat(altura));
 
   useEffect(() => {
     if (isEdit) carregarIdoso();
   }, [idosoId]);
+
+  // Marcar alterações quando qualquer campo muda
+  useEffect(() => {
+    if (isEdit) setTemAlteracoes(true);
+  }, [nome, foto, dataNasc, peso, altura, vidaAtiva, doencasSelecionadas, medico, clinica, observacoes]);
+
+  // ── Confirmação ao pressionar botão voltar do Android ──
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        if (temAlteracoes) {
+          Alert.alert(
+            'Descartar alterações?',
+            'Você tem alterações não salvas. Deseja sair sem salvar?',
+            [
+              { text: 'Continuar editando', style: 'cancel' },
+              { text: 'Descartar', style: 'destructive', onPress: () => navigation.goBack() },
+            ]
+          );
+          return true; // Intercepta o botão voltar
+        }
+        return false;
+      };
+
+      BackHandler.addEventListener('hardwareBackPress', onBackPress);
+      return () => BackHandler.removeEventListener('hardwareBackPress', onBackPress);
+    }, [temAlteracoes])
+  );
 
   const carregarIdoso = async () => {
     const idoso = await IdosoStorage.getById(idosoId);
@@ -57,6 +88,23 @@ export default function IdosoFormScreen({ navigation, route }) {
     setMedico(idoso.medico || '');
     setClinica(idoso.clinica || '');
     setObservacoes(idoso.observacoes || '');
+    // Reset após carregar
+    setTimeout(() => setTemAlteracoes(false), 100);
+  };
+
+  const handleVoltar = () => {
+    if (temAlteracoes && nome.trim()) {
+      Alert.alert(
+        'Descartar alterações?',
+        'Você tem dados não salvos. Deseja sair sem salvar?',
+        [
+          { text: 'Continuar editando', style: 'cancel' },
+          { text: 'Descartar', style: 'destructive', onPress: () => navigation.goBack() },
+        ]
+      );
+    } else {
+      navigation.goBack();
+    }
   };
 
   const selecionarFoto = async (origem) => {
@@ -110,16 +158,11 @@ export default function IdosoFormScreen({ navigation, route }) {
     setSalvando(true);
     try {
       const dados = {
-        nome: nome.trim(),
-        foto,
-        dataNasc,
+        nome: nome.trim(), foto, dataNasc,
         peso: peso ? parseFloat(peso) : null,
         altura: altura ? parseFloat(altura) : null,
-        vidaAtiva,
-        doencas: doencasSelecionadas,
-        medico,
-        clinica,
-        observacoes,
+        vidaAtiva, doencas: doencasSelecionadas,
+        medico, clinica, observacoes,
       };
 
       if (isEdit) {
@@ -128,11 +171,12 @@ export default function IdosoFormScreen({ navigation, route }) {
         await IdosoStorage.add(dados);
       }
 
+      setTemAlteracoes(false);
       Alert.alert('✅ Salvo!', `Idoso ${isEdit ? 'atualizado' : 'cadastrado'} com sucesso!`, [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
-    } catch (e) {
-      Alert.alert('Erro', 'Não foi possível salvar o idoso.');
+    } catch {
+      Alert.alert('Erro', 'Não foi possível salvar.');
     } finally {
       setSalvando(false);
     }
@@ -143,7 +187,7 @@ export default function IdosoFormScreen({ navigation, route }) {
       <ScreenHeader
         title={isEdit ? 'Editar Idoso' : 'Novo Idoso'}
         subtitle={isEdit ? 'Atualize os dados' : 'Preencha os dados do idoso'}
-        onBack={() => navigation.goBack()}
+        onBack={handleVoltar}
       />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -168,7 +212,6 @@ export default function IdosoFormScreen({ navigation, route }) {
         {/* Dados pessoais */}
         <Card>
           <Text style={styles.cardTitle}>📋 Dados Pessoais</Text>
-
           <InputField
             label="Nome Completo"
             value={nome}
@@ -178,7 +221,6 @@ export default function IdosoFormScreen({ navigation, route }) {
             required
             error={errors.nome}
           />
-
           <InputField
             label="Data de Nascimento"
             value={dataNasc}
@@ -191,10 +233,9 @@ export default function IdosoFormScreen({ navigation, route }) {
           />
         </Card>
 
-        {/* Dados de saúde */}
+        {/* Saúde */}
         <Card>
           <Text style={styles.cardTitle}>⚖️ Dados de Saúde</Text>
-
           <View style={styles.row}>
             <InputField
               label="Peso (kg)"
@@ -202,25 +243,20 @@ export default function IdosoFormScreen({ navigation, route }) {
               onChangeText={setPeso}
               placeholder="Ex: 72.5"
               keyboardType="decimal-pad"
-              icon="fitness-outline"
               error={errors.peso}
               style={{ flex: 1, marginRight: Spacing.sm }}
             />
             <InputField
-              label="Altura (m ou cm)"
+              label="Altura (m)"
               value={altura}
               onChangeText={setAltura}
               placeholder="Ex: 1.68"
               keyboardType="decimal-pad"
-              icon="resize-outline"
               error={errors.altura}
               style={{ flex: 1 }}
             />
           </View>
-
-          {/* IMC calculado em tempo real */}
           {imc && <IMCCard imc={imc} />}
-
           <ToggleField
             label="Tem vida ativa / pratica atividade física?"
             value={vidaAtiva}
@@ -229,11 +265,10 @@ export default function IdosoFormScreen({ navigation, route }) {
           />
         </Card>
 
-        {/* Doenças crônicas */}
+        {/* Doenças */}
         <Card>
           <Text style={styles.cardTitle}>🏥 Doenças Crônicas</Text>
           <Text style={styles.cardSubtitle}>Selecione todas que se aplicam</Text>
-
           <View style={styles.chipsWrap}>
             {DOENCAS_CRONICAS.map((d) => (
               <Chip
@@ -246,10 +281,9 @@ export default function IdosoFormScreen({ navigation, route }) {
           </View>
         </Card>
 
-        {/* Médico responsável */}
+        {/* Médico */}
         <Card>
           <Text style={styles.cardTitle}>👨‍⚕️ Médico Responsável</Text>
-
           <InputField
             label="Nome do Médico"
             value={medico}
@@ -258,7 +292,6 @@ export default function IdosoFormScreen({ navigation, route }) {
             icon="person-circle-outline"
             hint="Opcional"
           />
-
           <InputField
             label="Clínica / Hospital"
             value={clinica}
@@ -280,7 +313,7 @@ export default function IdosoFormScreen({ navigation, route }) {
             multiline
             numberOfLines={4}
             icon="document-text-outline"
-            hint="Opcional — alergia a medicamentos, preferências, etc."
+            hint="Opcional"
           />
         </Card>
 
@@ -301,7 +334,6 @@ export default function IdosoFormScreen({ navigation, route }) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   scroll: { padding: Spacing.md },
-
   fotoCard: { alignItems: 'center', marginBottom: Spacing.md },
   fotoHint: { ...Typography.bodySmall, color: Colors.outline, marginTop: Spacing.sm },
   fotoBtn: {
@@ -311,20 +343,8 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: Colors.primary,
   },
   fotoBtnText: { ...Typography.labelSmall, color: Colors.primary, marginLeft: 6 },
-
-  cardTitle: {
-    ...Typography.titleMedium,
-    color: Colors.onSurface, fontWeight: '700',
-    marginBottom: Spacing.sm,
-  },
-  cardSubtitle: {
-    ...Typography.bodySmall,
-    color: Colors.outline, marginBottom: Spacing.md,
-  },
-
+  cardTitle: { ...Typography.titleMedium, color: Colors.onSurface, fontWeight: '700', marginBottom: Spacing.sm },
+  cardSubtitle: { ...Typography.bodySmall, color: Colors.outline, marginBottom: Spacing.md },
   row: { flexDirection: 'row' },
-
-  chipsWrap: {
-    flexDirection: 'row', flexWrap: 'wrap', marginTop: Spacing.sm,
-  },
+  chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', marginTop: Spacing.sm },
 });

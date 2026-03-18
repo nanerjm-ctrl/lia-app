@@ -1,37 +1,38 @@
 // ============================================================
 // NAVIGATION - LIA App
-// Bottom Tab + Stack navigation com Material 3
-// Atualizado com rota de Configurações
+// Atualizado com WelcomeScreen e todas as rotas
 // ============================================================
 
-import React from 'react';
-import { View, Text, StyleSheet, Platform } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, StyleSheet, Platform } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Typography, Spacing } from '../theme';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Telas principais (tabs)
+import { Colors, Typography } from '../theme';
+
+// Telas principais
 import HomeScreen from '../screens/HomeScreen';
 import MedicamentosScreen from '../screens/MedicamentosScreen';
 import ConsultasScreen from '../screens/ConsultasScreen';
 import ReceitasScreen from '../screens/ReceitasScreen';
 import IdososScreen from '../screens/IdososScreen';
 
-// Telas secundárias (stack)
+// Telas secundárias
 import CuidadorScreen from '../screens/CuidadorScreen';
 import IdosoFormScreen from '../screens/IdosoFormScreen';
 import IdosoDetailScreen from '../screens/IdosoDetailScreen';
 import MedicamentoFormScreen from '../screens/MedicamentoFormScreen';
 import ConsultaFormScreen from '../screens/ConsultaFormScreen';
 import ReceitaFormScreen from '../screens/ReceitaFormScreen';
-import ConfiguracoesScreen from '../screens/ConfiguracoesScreen'; // 🆕 NOVO
+import ConfiguracoesScreen from '../screens/ConfiguracoesScreen';
+import WelcomeScreen from '../screens/WelcomeScreen'; // 🆕
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
-// ── Ícones da bottom tab ───────────────────────────────────
 const TAB_ICONS = {
   Home: { focused: 'home', outline: 'home-outline' },
   Medicamentos: { focused: 'medical', outline: 'medical-outline' },
@@ -40,7 +41,6 @@ const TAB_ICONS = {
   Idosos: { focused: 'people', outline: 'people-outline' },
 };
 
-// ── Bottom Tab Navigator ───────────────────────────────────
 function TabNavigator() {
   return (
     <Tab.Navigator
@@ -61,45 +61,53 @@ function TabNavigator() {
         },
       })}
     >
-      <Tab.Screen
-        name="Home"
-        component={HomeScreen}
-        options={{ tabBarLabel: 'Início' }}
-      />
-      <Tab.Screen
-        name="Medicamentos"
-        component={MedicamentosScreen}
-        options={{ tabBarLabel: 'Remédios' }}
-      />
-      <Tab.Screen
-        name="Consultas"
-        component={ConsultasScreen}
-        options={{ tabBarLabel: 'Consultas' }}
-      />
-      <Tab.Screen
-        name="Receitas"
-        component={ReceitasScreen}
-        options={{ tabBarLabel: 'Receitas' }}
-      />
-      <Tab.Screen
-        name="Idosos"
-        component={IdososScreen}
-        options={{ tabBarLabel: 'Idosos' }}
-      />
+      <Tab.Screen name="Home" component={HomeScreen} options={{ tabBarLabel: 'Início' }} />
+      <Tab.Screen name="Medicamentos" component={MedicamentosScreen} options={{ tabBarLabel: 'Remédios' }} />
+      <Tab.Screen name="Consultas" component={ConsultasScreen} options={{ tabBarLabel: 'Consultas' }} />
+      <Tab.Screen name="Receitas" component={ReceitasScreen} options={{ tabBarLabel: 'Receitas' }} />
+      <Tab.Screen name="Idosos" component={IdososScreen} options={{ tabBarLabel: 'Idosos' }} />
     </Tab.Navigator>
   );
 }
 
-// ── Root Stack Navigator ───────────────────────────────────
 export default function AppNavigator() {
+  const [primeiroAcesso, setPrimeiroAcesso] = useState(null);
+
+  useEffect(() => {
+    verificarPrimeiroAcesso();
+  }, []);
+
+  const verificarPrimeiroAcesso = async () => {
+    try {
+      const visto = await AsyncStorage.getItem('@lia_welcome_visto');
+      setPrimeiroAcesso(!visto);
+      if (!visto) {
+        await AsyncStorage.setItem('@lia_welcome_visto', 'true');
+      }
+    } catch {
+      setPrimeiroAcesso(false);
+    }
+  };
+
+  // Aguardar verificação
+  if (primeiroAcesso === null) return null;
+
   return (
     <NavigationContainer>
       <Stack.Navigator
+        initialRouteName={primeiroAcesso ? 'Welcome' : 'Tabs'}
         screenOptions={{
           headerShown: false,
           animation: 'slide_from_right',
         }}
       >
+        {/* 🆕 Tela de boas-vindas — só no primeiro acesso */}
+        <Stack.Screen
+          name="Welcome"
+          component={WelcomeScreen}
+          options={{ animation: 'fade' }}
+        />
+
         {/* Tabs principais */}
         <Stack.Screen name="Tabs" component={TabNavigator} />
 
@@ -110,8 +118,6 @@ export default function AppNavigator() {
         <Stack.Screen name="MedicamentoForm" component={MedicamentoFormScreen} />
         <Stack.Screen name="ConsultaForm" component={ConsultaFormScreen} />
         <Stack.Screen name="ReceitaForm" component={ReceitaFormScreen} />
-
-        {/* 🆕 Nova tela de Configurações */}
         <Stack.Screen name="Configuracoes" component={ConfiguracoesScreen} />
       </Stack.Navigator>
     </NavigationContainer>
@@ -132,16 +138,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
   },
-  tabLabel: {
-    ...Typography.labelSmall,
-    marginTop: 2,
-  },
+  tabLabel: { ...Typography.labelSmall, marginTop: 2 },
   tabIconWrapper: {
     borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 4,
   },
-  tabIconActive: {
-    backgroundColor: Colors.primaryContainer,
-  },
+  tabIconActive: { backgroundColor: Colors.primaryContainer },
 });
