@@ -15,7 +15,8 @@
       "**/*"
     ],
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "bundleIdentifier": "com.liaapp.cuidado"
     },
     "android": {
       "adaptiveIcon": {

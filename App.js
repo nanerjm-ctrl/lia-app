@@ -1,48 +1,48 @@
 // ============================================================
 // APP.JS - LIA App
-// Atualizado com navegação via notificação e limpeza automática
+// Navegação correta: notificação → MedicamentosScreen com foco
 // ============================================================
 
 import React, { useEffect, useRef } from 'react';
-import { StatusBar, Platform, LogBox } from 'react-native';
+import { StatusBar, LogBox } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
 import { createNavigationContainerRef } from '@react-navigation/native';
 
 import AppNavigator from './src/navigation';
-import { requestPermissions } from './src/services/notifications';
+import { requestPermissions } from './src/services/alarmManager';
+import { marcarComoTomado } from './src/services/medicamentosTomados';
 import { Colors } from './src/theme';
 
-// Ref global de navegação para usar fora de componentes
 export const navigationRef = createNavigationContainerRef();
 
-// Suprimir avisos não críticos
 LogBox.ignoreLogs([
   'Non-serializable values were found in the navigation state',
   'ViewPropTypes will be removed',
 ]);
 
-// ── Navegar baseado nos dados da notificação ────────────────
+// ── Navegar para tela correta com parâmetros ────────────────
 const navegarParaNotificacao = (data) => {
   if (!data || !navigationRef.isReady()) return;
 
   try {
-    const { tipo, medicamentoId, consultaId, idosoId } = data;
+    const { tipo, medicamentoId, consultaId, nomeIdoso, nomeMed, horario } = data;
 
     switch (tipo) {
       case 'alarme_medicamento':
       case 'alarme_reforco':
-        // Navegar para a tela de medicamentos
-        navigationRef.navigate('Tabs', { screen: 'Medicamentos' });
+        // ✅ Navegar para Medicamentos passando o ID para destacar
+        navigationRef.navigate('Tabs', {
+          screen: 'Medicamentos',
+          params: { medicamentoId }, // ← ID do medicamento para foco
+        });
         break;
 
       case 'consulta':
-        // Navegar para a tela de consultas
         navigationRef.navigate('Tabs', { screen: 'Consultas' });
         break;
 
       case 'hidratacao':
-        // Navegar para a home
         navigationRef.navigate('Tabs', { screen: 'Home' });
         break;
 
@@ -50,7 +50,7 @@ const navegarParaNotificacao = (data) => {
         navigationRef.navigate('Tabs', { screen: 'Home' });
     }
   } catch (error) {
-    console.error('[App] Erro ao navegar via notificação:', error);
+    console.error('[App] Erro ao navegar:', error);
   }
 };
 
@@ -59,90 +59,79 @@ export default function App() {
   const responseListener = useRef();
 
   useEffect(() => {
-    // Solicitar permissões
     requestPermissions();
 
-    // ── Listener: notificação recebida com app ABERTO ───────
+    // ── Notificação recebida com app aberto ─────────────
     notificationListener.current = Notifications.addNotificationReceivedListener(
       (notification) => {
-        console.log('[App] Notificação recebida:', notification.request.content.title);
+        console.log('[App] Notificação:', notification.request.content.title);
       }
     );
 
-    // ── Listener: usuário TOCOU na notificação ──────────────
+    // ── Usuário tocou na notificação ────────────────────
     responseListener.current = Notifications.addNotificationResponseReceivedListener(
       async (response) => {
         const data = response.notification.request.content.data;
         const action = response.actionIdentifier;
 
-        console.log('[App] Notificação tocada:', data, 'Ação:', action);
+        console.log('[App] Ação:', action, '| Med:', data?.nomeMed);
 
-        // ── Ação: "Tomei o remédio" ─────────────────────────
+        // ✅ Ação TOMEI — marcar e dispensar
         if (action === 'TOMEI') {
-          // Cancelar esta notificação específica
-          await Notifications.dismissNotificationAsync(
-            response.notification.request.identifier
-          );
-
-          // Marcar como tomado se tiver medicamentoId
           if (data?.medicamentoId) {
-            try {
-              const { marcarComoTomado } = require('./src/services/medicamentosTomados');
-              await marcarComoTomado(
-                data.medicamentoId,
-                data.horario || '',
-                data.nomeMed || '',
-                data.nomeIdoso || ''
-              );
-            } catch (e) {
-              console.warn('[App] Erro ao marcar tomado:', e);
-            }
+            await marcarComoTomado(
+              data.medicamentoId,
+              data.horario || '',
+              data.nomeMed || '',
+              data.nomeIdoso || ''
+            );
           }
+          await Notifications.dismissAllNotificationsAsync();
           return;
         }
 
-        // ── Ação: "Lembrar em 10 min" ───────────────────────
-        if (action === 'LEMBRAR_10MIN') {
+        // ✅ Ação ADIAR — reagendar em 10 minutos e dispensar
+        if (action === 'ADIAR') {
           await Notifications.dismissNotificationAsync(
             response.notification.request.identifier
           );
-
-          // Agendar novo alarme em 10 minutos
           await Notifications.scheduleNotificationAsync({
             content: {
-              title: `⏰ Lembrete: ${response.notification.request.content.title}`,
-              body: response.notification.request.content.body,
-              sound: 'default',
-              data: data,
+              title: `⏰ ${data?.nomeMed || 'Medicamento'} — Lembrete`,
+              body: `Adiado 10 minutos\n${data?.dose || ''}\n👤 ${data?.nomeIdoso || ''}`,
+              sticky: true,
+              autoDismiss: false,
+              data,
               android: {
-                channelId: 'alarme_medicamento',
-                priority: 'high',
-                // ongoing: false para sumir ao tocar
-                ongoing: false,
-                autoCancel: true,
+                channelId: 'alarme_critico',
+                priority: 'max',
+                ongoing: true,
+                autoCancel: false,
+                fullScreenIntent: true,
+                actions: [
+                  { identifier: 'TOMEI', title: '✅ Tomei' },
+                  { identifier: 'ADIAR', title: '⏰ +10 min' },
+                ],
               },
             },
-            trigger: { seconds: 10 * 60 }, // 10 minutos
+            trigger: { seconds: 600 },
           });
           return;
         }
 
-        // ── Toque simples na notificação ────────────────────
-        // Dispensar a notificação tocada
+        // ✅ Toque simples — dispensar e navegar para medicamento
         await Notifications.dismissNotificationAsync(
           response.notification.request.identifier
         );
-
-        // Navegar para tela correta
         navegarParaNotificacao(data);
       }
     );
 
-    // ── Verificar se app foi aberto por notificação ─────────
+    // ── App aberto via notificação ──────────────────────
     Notifications.getLastNotificationResponseAsync().then((response) => {
       if (response) {
         const data = response.notification.request.content.data;
-        navegarParaNotificacao(data);
+        setTimeout(() => navegarParaNotificacao(data), 800);
       }
     });
 
