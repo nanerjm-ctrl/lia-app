@@ -1,6 +1,6 @@
 // ============================================================
 // NAVIGATION - LIA App
-// Atualizado com suporte a navigationRef para notificações
+// Adicionada rota Emergencia
 // ============================================================
 
 import React, { useEffect, useState } from 'react';
@@ -29,6 +29,10 @@ import ConsultaFormScreen from '../screens/ConsultaFormScreen';
 import ReceitaFormScreen from '../screens/ReceitaFormScreen';
 import ConfiguracoesScreen from '../screens/ConfiguracoesScreen';
 import WelcomeScreen from '../screens/WelcomeScreen';
+import TelaAlarme from '../screens/TelaAlarme';
+
+// ✅ Nova tela de emergência
+import EmergenciaScreen from '../screens/EmergenciaScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -70,7 +74,6 @@ function TabNavigator() {
   );
 }
 
-// ── Aceita navigationRef do App.js ─────────────────────────
 export default function AppNavigator({ navigationRef }) {
   const [primeiroAcesso, setPrimeiroAcesso] = useState(null);
 
@@ -82,9 +85,7 @@ export default function AppNavigator({ navigationRef }) {
     try {
       const visto = await AsyncStorage.getItem('@lia_welcome_visto');
       setPrimeiroAcesso(!visto);
-      if (!visto) {
-        await AsyncStorage.setItem('@lia_welcome_visto', 'true');
-      }
+      if (!visto) await AsyncStorage.setItem('@lia_welcome_visto', 'true');
     } catch {
       setPrimeiroAcesso(false);
     }
@@ -110,6 +111,16 @@ export default function AppNavigator({ navigationRef }) {
         <Stack.Screen name="ConsultaForm" component={ConsultaFormScreen} />
         <Stack.Screen name="ReceitaForm" component={ReceitaFormScreen} />
         <Stack.Screen name="Configuracoes" component={ConfiguracoesScreen} />
+
+        {/* ✅ Tela de emergência */}
+        <Stack.Screen name="Emergencia" component={EmergenciaScreen} />
+
+        {/* Tela de alarme — modal fullscreen */}
+        <Stack.Screen
+          name="TelaAlarme"
+          component={TelaAlarme}
+          options={{ animation: 'fade', presentation: 'fullScreenModal' }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
@@ -124,16 +135,8 @@ const styles = StyleSheet.create({
     paddingBottom: Platform.OS === 'android' ? 8 : 16,
     paddingTop: 8,
     elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
   },
   tabLabel: { ...Typography.labelSmall, marginTop: 2 },
-  tabIconWrapper: {
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-  },
+  tabIconWrapper: { borderRadius: 16, paddingHorizontal: 12, paddingVertical: 4 },
   tabIconActive: { backgroundColor: Colors.primaryContainer },
 });

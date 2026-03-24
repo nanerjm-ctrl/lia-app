@@ -1,6 +1,6 @@
 // ============================================================
 // HOME SCREEN - LIA App
-// Corrigido: botão Tomei funcionando + notificações sumindo
+// Atualizado: botão de Emergência adicionado
 // ============================================================
 
 import React, { useState, useCallback } from 'react';
@@ -68,14 +68,12 @@ export default function HomeScreen() {
   const getNomeIdoso = (idosoId) =>
     idosos.find((i) => i.id === idosoId)?.nome || 'Desconhecido';
 
-  // ✅ Verificar se foi tomado
   const isTomado = (medicamentoId, horario) => {
     const hoje = new Date().toISOString().split('T')[0];
     const chave = `${medicamentoId}_${hoje}_${horario}`;
     return tomadosHoje.some((t) => t.chave === chave);
   };
 
-  // ✅ Marcar/desmarcar tomado COM dismiss da notificação
   const handleTomado = async (med, horario) => {
     const tomado = isTomado(med.id, horario);
     const nomeIdoso = getNomeIdoso(med.idosoId);
@@ -96,10 +94,8 @@ export default function HomeScreen() {
         ]
       );
     } else {
-      // ✅ Marcar como tomado
       await marcarComoTomado(med.id, horario, med.nome, nomeIdoso);
 
-      // ✅ Dispensar TODAS as notificações deste medicamento da barra
       try {
         const notificacoesAtivas = await Notifications.getPresentedNotificationsAsync();
         for (const notif of notificacoesAtivas) {
@@ -114,7 +110,6 @@ export default function HomeScreen() {
 
       await carregarDados();
 
-      // Feedback visual
       Alert.alert(
         '✅ Registrado!',
         `${med.nome} (${horario}) marcado como tomado!`,
@@ -146,7 +141,7 @@ export default function HomeScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
+        {/* ── Header ── */}
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
             <Text style={styles.saudacao}>{saudacao}! 👋</Text>
@@ -173,7 +168,27 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Alerta consultas amanhã */}
+        {/* ── 🚨 BOTÃO DE EMERGÊNCIA ── */}
+        <TouchableOpacity
+          style={styles.emergenciaBtn}
+          onPress={() => navigation.navigate('Emergencia')}
+          activeOpacity={0.85}
+        >
+          <View style={styles.emergenciaBtnLeft}>
+            <View style={styles.emergenciaIconBox}>
+              <Ionicons name="warning" size={28} color="#fff" />
+            </View>
+            <View>
+              <Text style={styles.emergenciaBtnTitulo}>🚨 EMERGÊNCIA</Text>
+              <Text style={styles.emergenciaBtnSub}>
+                SAMU 192 · Bombeiros 193 · Polícia 190
+              </Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={22} color="rgba(255,255,255,0.8)" />
+        </TouchableOpacity>
+
+        {/* ── Alerta consultas amanhã ── */}
         {alertasAmanha.length > 0 && (
           <Card style={[styles.alertCard, { backgroundColor: Colors.tertiaryContainer }]}>
             <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
@@ -193,7 +208,7 @@ export default function HomeScreen() {
           </Card>
         )}
 
-        {/* Cards idosos */}
+        {/* ── Cards idosos ── */}
         <SectionHeader
           title="Meus Idosos"
           action={() => navigation.navigate('Idosos')}
@@ -244,7 +259,7 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </ScrollView>
 
-        {/* Medicamentos de hoje */}
+        {/* ── Medicamentos de hoje ── */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing.md }}>
           <SectionHeader title="💊 Remédios de Hoje" />
           {totalMedsPendentes > 0 && (
@@ -274,7 +289,6 @@ export default function HomeScreen() {
                 </View>
               </View>
 
-              {/* ✅ Horários com botão Tomei funcionando */}
               {med.horarios?.length > 0 && (
                 <View style={styles.horariosContainer}>
                   <Text style={styles.horariosLabel}>Toque no horário para marcar:</Text>
@@ -315,7 +329,7 @@ export default function HomeScreen() {
           ))
         )}
 
-        {/* Próximas consultas */}
+        {/* ── Próximas consultas ── */}
         <SectionHeader
           title="📅 Próximas Consultas"
           action={() => navigation.navigate('Consultas')}
@@ -357,7 +371,7 @@ export default function HomeScreen() {
           ))
         )}
 
-        {/* Botão configurações */}
+        {/* ── Botão configurações ── */}
         <TouchableOpacity
           style={styles.configBtn}
           onPress={() => navigation.navigate('Configuracoes')}
@@ -400,6 +414,46 @@ const styles = StyleSheet.create({
     width: 52, height: 52, borderRadius: 26,
     backgroundColor: Colors.primaryContainer,
     alignItems: 'center', justifyContent: 'center',
+  },
+
+  // ── 🚨 Botão Emergência ──
+  emergenciaBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#DC2626',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: Spacing.lg,
+    elevation: 6,
+    shadowColor: '#DC2626',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+  },
+  emergenciaBtnLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  emergenciaIconBox: {
+    width: 48, height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emergenciaBtnTitulo: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#fff',
+    letterSpacing: 1,
+  },
+  emergenciaBtnSub: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.85)',
+    marginTop: 2,
   },
 
   alertCard: { marginBottom: Spacing.md },
@@ -464,14 +518,13 @@ const styles = StyleSheet.create({
   horariosLabel: { ...Typography.labelSmall, color: Colors.outline, marginBottom: 6 },
   horariosRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
 
-  // ✅ Botão de horário grande e clicável
   horarioBotao: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: Spacing.md, paddingVertical: 10,
     borderRadius: BorderRadius.full,
     backgroundColor: Colors.secondaryContainer,
     borderWidth: 2, borderColor: Colors.secondary,
-    minHeight: 44, // Mínimo 44px para facilitar toque
+    minHeight: 44,
   },
   horarioBotaoTomado: {
     backgroundColor: '#D1FAE5',
