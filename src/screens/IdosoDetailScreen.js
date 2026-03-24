@@ -1,6 +1,8 @@
 // ============================================================
 // IDOSO DETAIL SCREEN - LIA App
-// Perfil completo do idoso com histórico, meds e consultas
+// ✅ Exibe convênio (SUS ou Particular) com campos corretos
+// ✅ Exibe RG, CPF
+// ✅ Exibe endereço completo
 // ============================================================
 
 import React, { useState, useCallback } from 'react';
@@ -49,6 +51,23 @@ export default function IdosoDetailScreen({ route }) {
   const imc = calcularIMC(idoso.peso, idoso.altura);
   const idade = calcularIdade(idoso.dataNasc);
 
+  // ── Helpers de exibição ─────────────────────────────────
+  const temConvenio = idoso.convenio === 'sus'
+    ? (idoso.unidadeSus || idoso.numeroCadastroSus)
+    : (idoso.nomeConvenio || idoso.numeroCarteirinha);
+
+  const temDocumentos = idoso.rg || idoso.cpf;
+
+  const temEndereco = idoso.logradouro || idoso.cidade;
+
+  const enderecoFormatado = [
+    idoso.logradouro,
+    idoso.numeroEnd ? `nº ${idoso.numeroEnd}` : null,
+    idoso.bairro,
+  ].filter(Boolean).join(', ');
+
+  const cidadeEstado = [idoso.cidade, idoso.estado].filter(Boolean).join(' - ');
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScreenHeader
@@ -60,7 +79,8 @@ export default function IdosoDetailScreen({ route }) {
       />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* Perfil header */}
+
+        {/* ── Perfil header ── */}
         <Card style={styles.profileCard}>
           <View style={styles.profileRow}>
             {idoso.foto ? (
@@ -111,26 +131,156 @@ export default function IdosoDetailScreen({ route }) {
           {imc && <IMCCard imc={imc} />}
         </Card>
 
-        {/* Médico */}
+        {/* ── Convênio ── */}
+        {temConvenio && (
+          <Card>
+            <Text style={styles.sectionTitle}>🏥 Convênio / Atendimento</Text>
+
+            {/* Badge SUS ou Particular */}
+            <View style={[
+              styles.convenioBadge,
+              idoso.convenio === 'sus' ? styles.convenioBadgeSus : styles.convenioBadgeParticular,
+            ]}>
+              <Ionicons
+                name={idoso.convenio === 'sus' ? 'medical' : 'card'}
+                size={16}
+                color={idoso.convenio === 'sus' ? '#1D4ED8' : Colors.primary}
+              />
+              <Text style={[
+                styles.convenioBadgeText,
+                { color: idoso.convenio === 'sus' ? '#1D4ED8' : Colors.primary },
+              ]}>
+                {idoso.convenio === 'sus' ? 'SUS — Sistema Único de Saúde' : 'Plano de Saúde Particular'}
+              </Text>
+            </View>
+
+            {/* Campos SUS */}
+            {idoso.convenio === 'sus' && (
+              <>
+                {idoso.unidadeSus && (
+                  <View style={styles.infoRow}>
+                    <Ionicons name="business-outline" size={18} color={Colors.primary} />
+                    <View style={{ marginLeft: Spacing.sm }}>
+                      <Text style={styles.infoLabel}>Unidade de Saúde</Text>
+                      <Text style={styles.infoText}>{idoso.unidadeSus}</Text>
+                    </View>
+                  </View>
+                )}
+                {idoso.numeroCadastroSus && (
+                  <View style={styles.infoRow}>
+                    <Ionicons name="card-outline" size={18} color={Colors.primary} />
+                    <View style={{ marginLeft: Spacing.sm }}>
+                      <Text style={styles.infoLabel}>Cartão SUS</Text>
+                      <Text style={styles.infoText}>{idoso.numeroCadastroSus}</Text>
+                    </View>
+                  </View>
+                )}
+              </>
+            )}
+
+            {/* Campos Particular */}
+            {idoso.convenio === 'particular' && (
+              <>
+                {idoso.nomeConvenio && (
+                  <View style={styles.infoRow}>
+                    <Ionicons name="business-outline" size={18} color={Colors.primary} />
+                    <View style={{ marginLeft: Spacing.sm }}>
+                      <Text style={styles.infoLabel}>Convênio</Text>
+                      <Text style={styles.infoText}>{idoso.nomeConvenio}</Text>
+                    </View>
+                  </View>
+                )}
+                {idoso.numeroCarteirinha && (
+                  <View style={styles.infoRow}>
+                    <Ionicons name="card-outline" size={18} color={Colors.primary} />
+                    <View style={{ marginLeft: Spacing.sm }}>
+                      <Text style={styles.infoLabel}>Nº da Carteirinha</Text>
+                      <Text style={styles.infoText}>{idoso.numeroCarteirinha}</Text>
+                    </View>
+                  </View>
+                )}
+              </>
+            )}
+          </Card>
+        )}
+
+        {/* ── Documentos ── */}
+        {temDocumentos && (
+          <Card>
+            <Text style={styles.sectionTitle}>📄 Documentos</Text>
+            {idoso.rg && (
+              <View style={styles.infoRow}>
+                <Ionicons name="document-outline" size={18} color={Colors.primary} />
+                <View style={{ marginLeft: Spacing.sm }}>
+                  <Text style={styles.infoLabel}>RG</Text>
+                  <Text style={styles.infoText}>{idoso.rg}</Text>
+                </View>
+              </View>
+            )}
+            {idoso.cpf && (
+              <View style={styles.infoRow}>
+                <Ionicons name="document-text-outline" size={18} color={Colors.primary} />
+                <View style={{ marginLeft: Spacing.sm }}>
+                  <Text style={styles.infoLabel}>CPF</Text>
+                  <Text style={styles.infoText}>{idoso.cpf}</Text>
+                </View>
+              </View>
+            )}
+          </Card>
+        )}
+
+        {/* ── Endereço ── */}
+        {temEndereco && (
+          <Card>
+            <Text style={styles.sectionTitle}>📍 Endereço</Text>
+            {enderecoFormatado && (
+              <View style={styles.infoRow}>
+                <Ionicons name="map-outline" size={18} color={Colors.primary} />
+                <Text style={[styles.infoText, { marginLeft: Spacing.sm, flex: 1 }]}>
+                  {enderecoFormatado}
+                </Text>
+              </View>
+            )}
+            {cidadeEstado && (
+              <View style={styles.infoRow}>
+                <Ionicons name="location-outline" size={18} color={Colors.primary} />
+                <Text style={[styles.infoText, { marginLeft: Spacing.sm }]}>
+                  {cidadeEstado}
+                </Text>
+              </View>
+            )}
+            {idoso.cep && (
+              <View style={styles.infoRow}>
+                <Ionicons name="mail-outline" size={18} color={Colors.primary} />
+                <View style={{ marginLeft: Spacing.sm }}>
+                  <Text style={styles.infoLabel}>CEP</Text>
+                  <Text style={styles.infoText}>{idoso.cep}</Text>
+                </View>
+              </View>
+            )}
+          </Card>
+        )}
+
+        {/* ── Médico ── */}
         {(idoso.medico || idoso.clinica) && (
           <Card>
             <Text style={styles.sectionTitle}>👨‍⚕️ Médico</Text>
             {idoso.medico && (
               <View style={styles.infoRow}>
                 <Ionicons name="person-circle-outline" size={18} color={Colors.primary} />
-                <Text style={styles.infoText}>{idoso.medico}</Text>
+                <Text style={[styles.infoText, { marginLeft: Spacing.sm }]}>{idoso.medico}</Text>
               </View>
             )}
             {idoso.clinica && (
               <View style={styles.infoRow}>
                 <Ionicons name="business-outline" size={18} color={Colors.primary} />
-                <Text style={styles.infoText}>{idoso.clinica}</Text>
+                <Text style={[styles.infoText, { marginLeft: Spacing.sm }]}>{idoso.clinica}</Text>
               </View>
             )}
           </Card>
         )}
 
-        {/* Doenças */}
+        {/* ── Doenças crônicas ── */}
         {idoso.doencas?.length > 0 && (
           <Card>
             <Text style={styles.sectionTitle}>🏥 Doenças Crônicas</Text>
@@ -144,7 +294,7 @@ export default function IdosoDetailScreen({ route }) {
           </Card>
         )}
 
-        {/* Medicamentos */}
+        {/* ── Medicamentos ── */}
         <SectionHeader
           title="💊 Medicamentos"
           action={() => navigation.navigate('MedicamentoForm', { idosoId })}
@@ -175,7 +325,7 @@ export default function IdosoDetailScreen({ route }) {
           ))
         )}
 
-        {/* Consultas recentes */}
+        {/* ── Consultas ── */}
         <SectionHeader
           title="📅 Consultas"
           action={() => navigation.navigate('ConsultaForm', { idosoId })}
@@ -201,7 +351,7 @@ export default function IdosoDetailScreen({ route }) {
           ))
         )}
 
-        {/* Observações */}
+        {/* ── Observações ── */}
         {idoso.observacoes?.trim() && (
           <Card>
             <Text style={styles.sectionTitle}>📝 Observações</Text>
@@ -209,7 +359,7 @@ export default function IdosoDetailScreen({ route }) {
           </Card>
         )}
 
-        {/* Ações rápidas */}
+        {/* ── Ações rápidas ── */}
         <View style={styles.acoesBtns}>
           <Button
             label="Agendar Consulta"
@@ -251,32 +401,37 @@ const styles = StyleSheet.create({
   badgesRow: { flexDirection: 'row', marginTop: Spacing.sm },
 
   statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: Spacing.md,
+    flexDirection: 'row', justifyContent: 'space-around', marginBottom: Spacing.md,
   },
   statBox: {
-    alignItems: 'center',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.surfaceVariant,
-    minWidth: 80,
+    alignItems: 'center', paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md, backgroundColor: Colors.surfaceVariant, minWidth: 80,
   },
   statValue: { ...Typography.headlineSmall, color: Colors.primary, fontWeight: '800' },
   statLabel: { ...Typography.labelSmall, color: Colors.outline },
 
   sectionTitle: { ...Typography.titleSmall, color: Colors.onSurface, fontWeight: '700', marginBottom: Spacing.sm },
 
-  infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
-  infoText: { ...Typography.bodyMedium, color: Colors.onSurface, marginLeft: Spacing.sm },
+  // Convênio badge
+  convenioBadge: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: Spacing.md, paddingVertical: 8,
+    borderRadius: BorderRadius.full,
+    gap: 6, marginBottom: Spacing.md,
+    alignSelf: 'flex-start',
+  },
+  convenioBadgeSus: { backgroundColor: '#DBEAFE' },
+  convenioBadgeParticular: { backgroundColor: Colors.primaryContainer },
+  convenioBadgeText: { ...Typography.labelMedium, fontWeight: '700' },
+
+  infoRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
+  infoLabel: { ...Typography.labelSmall, color: Colors.outline },
+  infoText: { ...Typography.bodyMedium, color: Colors.onSurface, fontWeight: '500' },
 
   doencasWrap: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 },
   doencaChip: {
     paddingHorizontal: Spacing.sm, paddingVertical: 5,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.errorContainer,
-    margin: 3,
+    borderRadius: BorderRadius.full, backgroundColor: Colors.errorContainer, margin: 3,
   },
   doencaChipText: { ...Typography.labelSmall, color: Colors.error },
 
